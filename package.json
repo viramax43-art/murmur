@@ -1,0 +1,17 @@
+{
+  "name": "murmur",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MURMUR: The First Words - a 2D language-acquisition game prototype",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "validate": "node tools/validate.mjs",
+    "check": "node tools/boot-check.mjs",
+    "rooms": "node tools/room-check.mjs",
+    "smoke": "node tools/smoke.mjs",
+    "cutscenes": "powershell -ExecutionPolicy Bypass -File tools/blender/render_all.ps1",
+    "test": "node tools/validate.mjs && node tools/boot-check.mjs && node tools/room-check.mjs && node tools/smoke.mjs"
+  }
+}

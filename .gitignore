@@ -1,0 +1,16 @@
+# Dependencies (the game itself has none; this is for tooling only)
+node_modules/
+
+# Blender human base meshes, ~100 MB. Refetch with tools/blender/fetch_assets.ps1
+tools/blender/cache/
+
+# Probe renders, crop sheets and render logs
+tools/blender/out/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# OS noise
+Thumbs.db
+.DS_Store
