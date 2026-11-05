@@ -12,6 +12,9 @@
     "rooms": "node tools/room-check.mjs",
     "smoke": "node tools/smoke.mjs",
     "cutscenes": "powershell -ExecutionPolicy Bypass -File tools/blender/render_all.ps1",
-    "test": "node tools/validate.mjs && node tools/boot-check.mjs && node tools/room-check.mjs && node tools/smoke.mjs"
+    "sprites": "node tools/sprites.mjs",
+    "sprites:verify": "node tools/sprites.mjs --verify",
+    "atlas": "node tools/atlas-check.mjs",
+    "test": "node tools/validate.mjs && node tools/sprites.mjs --verify && node tools/atlas-check.mjs && node tools/boot-check.mjs && node tools/room-check.mjs && node tools/smoke.mjs"
   }
 }

@@ -14,7 +14,7 @@ export default {
     { id: 'tree', sprite: 'tree', x: 10, y: 82, size: 'xl' },
     { id: 'dog', sprite: 'dog', x: 26, y: 90, size: 'lg' },
     { id: 'baby', sprite: 'baby', x: 46, y: 94, size: 'md' },
-    { id: 'ball', sprite: 'ball', x: 60, y: 88, size: 'sm' },
+    { id: 'ball', sprite: 'ball', x: 60, y: 88, size: 'md' },
     { id: 'mama', sprite: 'mama', x: 72, y: 84, size: 'xl' },
     { id: 'friend', sprite: 'friend', x: 92, y: 82, size: 'lg' },
   ],

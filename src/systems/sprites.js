@@ -2,6 +2,13 @@
 // '.' means transparent. Everything else is looked up in PALETTE.
 // The validator (tools/validate.mjs) enforces that every row of a sprite
 // is the same width and that every character exists in the palette.
+//
+// A sprite can also be served from the sliced concept art in ./atlas.js: the
+// painted map is drawn first, so nothing is ever blank, and the canvas is
+// repainted in place with the atlas frame once the image has loaded. Callers
+// keep using spriteCanvas() and never learn which of the two answered.
+
+import { hasArt, upgradeArt } from './atlas.js';
 
 export const PALETTE = {
   '.': null,
@@ -453,5 +460,7 @@ export function spriteCanvas(name, className = '', unit = 6) {
     return fallback;
   }
   if (className) canvas.className = `${className} pix`;
+  // Newer art for this name? Keep the painted pixels until it arrives.
+  if (hasArt(name)) upgradeArt(canvas, name);
   return canvas;
 }

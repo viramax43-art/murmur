@@ -14,7 +14,7 @@ export default {
     { id: 'friend', sprite: 'friend', x: 42, y: 92, size: 'lg' },
     { id: 'baby', sprite: 'baby', x: 62, y: 94, size: 'md' },
     { id: 'book', sprite: 'book', x: 78, y: 78, size: 'sm' },
-    { id: 'apple', sprite: 'apple', x: 90, y: 74, size: 'sm' },
+    { id: 'apple', sprite: 'apple', x: 90, y: 74, size: 'md' },
     { id: 'yes', sprite: 'check', x: 68, y: 40, size: 'sm' },
     { id: 'no', sprite: 'cross', x: 82, y: 40, size: 'sm' },
   ],

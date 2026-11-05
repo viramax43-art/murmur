@@ -1,0 +1,334 @@
+{
+  "version": 1,
+  "image": "murmur_atlas.png",
+  "source": "assets/source/murmur/murmur_sprite_sheet_concept.png",
+  "sheet": {
+    "width": 1536,
+    "height": 1024
+  },
+  "size": {
+    "width": 1024,
+    "height": 1414
+  },
+  "padding": 4,
+  "alphaCut": 40,
+  "sampling": "nearest",
+  "clips": [
+    {
+      "name": "boy-idle",
+      "frames": [
+        "boy-idle-front"
+      ],
+      "fps": 1,
+      "loop": false
+    },
+    {
+      "name": "boy-turn",
+      "frames": [
+        "boy-idle-front",
+        "boy-idle-side"
+      ],
+      "fps": 6,
+      "loop": true
+    },
+    {
+      "name": "boy-walk",
+      "frames": [
+        "boy-walk-1",
+        "boy-walk-2",
+        "boy-walk-3",
+        "boy-walk-4"
+      ],
+      "fps": 8,
+      "loop": true
+    },
+    {
+      "name": "boy-crouch",
+      "frames": [
+        "boy-crouch"
+      ],
+      "fps": 1,
+      "loop": false
+    },
+    {
+      "name": "boy-happy",
+      "frames": [
+        "boy-happy"
+      ],
+      "fps": 1,
+      "loop": false
+    }
+  ],
+  "frames": {
+    "apple": {
+      "x": 778,
+      "y": 1139,
+      "w": 120,
+      "h": 129,
+      "pivot": {
+        "x": 60,
+        "y": 129
+      },
+      "clip": null
+    },
+    "ball": {
+      "x": 145,
+      "y": 1298,
+      "w": 110,
+      "h": 109,
+      "pivot": {
+        "x": 55,
+        "y": 109
+      },
+      "clip": null
+    },
+    "bird": {
+      "x": 259,
+      "y": 1298,
+      "w": 129,
+      "h": 107,
+      "pivot": {
+        "x": 64.5,
+        "y": 107
+      },
+      "clip": null
+    },
+    "blocks": {
+      "x": 431,
+      "y": 1139,
+      "w": 145,
+      "h": 145,
+      "pivot": {
+        "x": 72.5,
+        "y": 145
+      },
+      "clip": null
+    },
+    "book": {
+      "x": 247,
+      "y": 1139,
+      "w": 180,
+      "h": 154,
+      "pivot": {
+        "x": 90,
+        "y": 154
+      },
+      "clip": null
+    },
+    "boy-crouch": {
+      "x": 4,
+      "y": 4,
+      "w": 254,
+      "h": 300,
+      "pivot": {
+        "x": 127,
+        "y": 299
+      },
+      "clip": "boy-crouch"
+    },
+    "boy-happy": {
+      "x": 262,
+      "y": 4,
+      "w": 254,
+      "h": 300,
+      "pivot": {
+        "x": 127,
+        "y": 299
+      },
+      "clip": "boy-happy"
+    },
+    "boy-idle-front": {
+      "x": 520,
+      "y": 4,
+      "w": 254,
+      "h": 300,
+      "pivot": {
+        "x": 127,
+        "y": 299
+      },
+      "clip": "boy-idle"
+    },
+    "boy-idle-side": {
+      "x": 4,
+      "y": 308,
+      "w": 254,
+      "h": 300,
+      "pivot": {
+        "x": 127,
+        "y": 299
+      },
+      "clip": "boy-turn"
+    },
+    "boy-walk-1": {
+      "x": 262,
+      "y": 308,
+      "w": 254,
+      "h": 300,
+      "pivot": {
+        "x": 127,
+        "y": 299
+      },
+      "clip": "boy-walk"
+    },
+    "boy-walk-2": {
+      "x": 520,
+      "y": 308,
+      "w": 254,
+      "h": 300,
+      "pivot": {
+        "x": 127,
+        "y": 299
+      },
+      "clip": "boy-walk"
+    },
+    "boy-walk-3": {
+      "x": 4,
+      "y": 612,
+      "w": 254,
+      "h": 300,
+      "pivot": {
+        "x": 127,
+        "y": 299
+      },
+      "clip": "boy-walk"
+    },
+    "boy-walk-4": {
+      "x": 262,
+      "y": 612,
+      "w": 254,
+      "h": 300,
+      "pivot": {
+        "x": 127,
+        "y": 299
+      },
+      "clip": "boy-walk"
+    },
+    "cat": {
+      "x": 368,
+      "y": 916,
+      "w": 159,
+      "h": 197,
+      "pivot": {
+        "x": 79.5,
+        "y": 197
+      },
+      "clip": null
+    },
+    "chair": {
+      "x": 716,
+      "y": 916,
+      "w": 135,
+      "h": 179,
+      "pivot": {
+        "x": 67.5,
+        "y": 179
+      },
+      "clip": null
+    },
+    "chest": {
+      "x": 580,
+      "y": 1139,
+      "w": 194,
+      "h": 145,
+      "pivot": {
+        "x": 97,
+        "y": 145
+      },
+      "clip": null
+    },
+    "curtain": {
+      "x": 694,
+      "y": 612,
+      "w": 159,
+      "h": 242,
+      "pivot": {
+        "x": 79.5,
+        "y": 242
+      },
+      "clip": null
+    },
+    "monstera": {
+      "x": 520,
+      "y": 612,
+      "w": 170,
+      "h": 255,
+      "pivot": {
+        "x": 85,
+        "y": 255
+      },
+      "clip": null
+    },
+    "mug": {
+      "x": 4,
+      "y": 1298,
+      "w": 137,
+      "h": 112,
+      "pivot": {
+        "x": 68.5,
+        "y": 112
+      },
+      "clip": null
+    },
+    "picture": {
+      "x": 855,
+      "y": 916,
+      "w": 126,
+      "h": 169,
+      "pivot": {
+        "x": 63,
+        "y": 169
+      },
+      "clip": null
+    },
+    "plant": {
+      "x": 531,
+      "y": 916,
+      "w": 181,
+      "h": 189,
+      "pivot": {
+        "x": 90.5,
+        "y": 189
+      },
+      "clip": null
+    },
+    "rabbit": {
+      "x": 211,
+      "y": 916,
+      "w": 153,
+      "h": 201,
+      "pivot": {
+        "x": 76.5,
+        "y": 201
+      },
+      "clip": null
+    },
+    "rug": {
+      "x": 4,
+      "y": 1139,
+      "w": 239,
+      "h": 155,
+      "pivot": {
+        "x": 119.5,
+        "y": 155
+      },
+      "clip": null
+    },
+    "window": {
+      "x": 4,
+      "y": 916,
+      "w": 203,
+      "h": 219,
+      "pivot": {
+        "x": 101.5,
+        "y": 219
+      },
+      "clip": null
+    }
+  },
+  "map": {
+    "friend": "boy-idle-front",
+    "ball": "ball",
+    "book": "book",
+    "apple": "apple"
+  }
+}

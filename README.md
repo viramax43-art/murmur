@@ -19,11 +19,13 @@ No dependencies, no build step: plain ES modules served by `server.mjs`.
 ## Check it
 
 ```bash
-npm test         # everything below, in order
-npm run validate # content + i18n + sprite + room audit (fails loudly on bad data)
-npm run check    # imports every module under a DOM stub
-npm run rooms    # paints every room and pathfinds every hotspot from the spawn
-npm run smoke    # headless playthrough: title -> 5 rooms -> notebook
+npm test              # everything below, in order
+npm run validate      # content + i18n + sprite + room audit (fails loudly on bad data)
+npm run sprites:verify # the committed sprite atlas still matches the source sheet
+npm run atlas         # the atlas loader and frame drawing, on a stub canvas
+npm run check         # imports every module under a DOM stub
+npm run rooms         # paints every room and pathfinds every hotspot from the spawn
+npm run smoke         # headless playthrough: title -> 5 rooms -> notebook
 ```
 
 `smoke` drives the real screens through a fake DOM: it picks a language, walks into
@@ -91,6 +93,30 @@ chapter ends on its own once the room has nothing left to say.
 Hotspots unlock in story order (the marker of the next one pulses), so a room can
 never teach `book` before it has introduced the teacher.
 
+## Sprites
+
+Most pixels in the game are painted in code, but a hi-res art pack is sliced in
+from a concept sheet: the boy and a handful of props now come from real drawings
+with `idle` / `turn` / `walk` / `crouch` / `happy` clips.
+
+```bash
+npm run sprites        # slice assets/source/murmur/*.png -> cutouts + atlas + JSON
+npm run sprites:verify # nothing resamples, nothing is stale, nothing lacks a halo
+```
+
+* `tools/sprites.mjs` — finds each object by its own silhouette (the sheet is not
+  a grid), cuts it 1:1, re-lays the boy's poses onto one canvas with one feet
+  pivot, then packs `assets/sprites/murmur_atlas.png` with 4 px gutters
+* `tools/png.mjs` — a PNG codec on `node:zlib`, so the pipeline stays dependency-free
+* `src/systems/atlas.js` — loads the atlas, draws frames with nearest filtering
+  only, and repaints a sprite in place once the image lands; `ART_MAP` is the
+  migration table from painted sprite to atlas frame
+* `docs/sprites.md` — the pipeline, the scale numbers per sprite, and what is
+  deliberately not swapped yet (the room grid, whose art is 6× coarser)
+
+If the atlas is missing or broken, every sprite quietly stays painted, so the
+game never depends on the art pack to boot.
+
 ## Cutscenes
 
 Chapters are bookended by rendered stills — real human base meshes lit and
@@ -124,9 +150,11 @@ src/content/          concepts, chapters 1-5, rooms, cutscene table, localizatio
 src/systems/          speech (TTS + ASR), audio (sfx), sprites (pixel art), world, tiles
 src/ui/               dom helpers, i18n, line rendering, router, cutscene, chapterflow, 5 screens
 assets/cutscenes/     Blender renders (generated, safe to delete and rebuild)
-tools/                validate.mjs, boot-check.mjs, room-check.mjs, smoke.mjs
+assets/sprites/       sliced concept art: cutouts + murmur_atlas.png + JSON
+assets/source/        the original art sheet, kept for rebuilds
+tools/                validate.mjs, sprites.mjs, png.mjs, atlas-check.mjs, boot-check.mjs, room-check.mjs, smoke.mjs
 tools/blender/        the cutscene pipeline (Python, runs inside Blender)
-docs/                 room format, cutscene shot list + reference brief
+docs/                 room format, sprite pipeline, cutscene shot list + reference brief
 ```
 
 ## Known limits of the slice

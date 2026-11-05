@@ -7,6 +7,12 @@ tools/blender/cache/
 # Probe renders, crop sheets and render logs
 tools/blender/out/
 
+# Slicer reports (contact sheets) - rebuilt by `npm run sprites`
+tools/out/
+
+# The downloaded art pack; the sheet it carries lives in assets/source/murmur/
+murmur_art_pack.zip
+
 # Python bytecode
 __pycache__/
 *.pyc
