@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { loadAtlas, upgradeArt, drawArtFrame, frameOf, clipOf, artName, hasArt, atlasStatus, ART_MAP, ATLAS_META } from '../src/systems/atlas.js';
+import { spriteCanvas, spriteMetrics } from '../src/systems/sprites.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const meta = JSON.parse(readFileSync(join(ROOT, ATLAS_META), 'utf8'));
@@ -32,21 +33,33 @@ globalThis.Image = class {
   }
 };
 
-globalThis.document = { createElement: () => ({ style: {}, dataset: {} }) };
+globalThis.document = {
+  createElement: (tag) => (tag === 'canvas' ? stubCanvas().canvas : { style: {}, dataset: {}, setAttribute() {} }),
+};
 
 function stubCanvas() {
   const calls = [];
   const ctx = {
     imageSmoothingEnabled: true,
+    fillStyle: '',
     save() {},
     restore() {},
     translate() {},
     scale() {},
+    fillRect() {},
     drawImage(...args) {
       calls.push({ args, smoothing: this.imageSmoothingEnabled });
     },
   };
-  return { calls, canvas: { width: 0, height: 0, dataset: {}, getContext: () => ctx } };
+  const canvas = {
+    width: 0,
+    height: 0,
+    dataset: {},
+    className: '',
+    setAttribute() {},
+    getContext: () => ctx,
+  };
+  return { calls, canvas };
 }
 
 /* ---------- the mapping table itself ---------- */
@@ -110,6 +123,23 @@ for (const name of ['boy-idle', 'boy-walk', 'boy-crouch', 'boy-happy']) {
 const walk = clipOf('boy-walk');
 check(Boolean(walk) && walk.frames.length >= 4, 'boy-walk should have at least four frames');
 check(Boolean(walk) && walk.fps >= 7 && walk.fps <= 10, 'boy-walk should start at 100-140 ms per frame (7-10 fps)');
+
+/* ---------- only slots that ask for it get the hi-res art ---------- */
+
+const metrics = spriteMetrics('apple');
+const icon = spriteCanvas('apple', 'card__sprite', 6);
+check(
+  icon.width === metrics.width * 6 && icon.height === metrics.height * 6,
+  `a unit-6 icon must keep its painted size, got ${icon.width}x${icon.height}`,
+);
+check(icon.className === 'card__sprite pix', `icon lost its class name: "${icon.className}"`);
+
+const hero = spriteCanvas('apple', 'obj__sprite', 8, { art: true });
+check(hero.width === apple.w && hero.height === apple.h, `an opted-in slot should swap to the atlas, got ${hero.width}x${hero.height}`);
+check(hero.className === 'obj__sprite pix', `stage slot lost its class name: "${hero.className}"`);
+
+const unmapped = spriteCanvas('mama', 'obj__sprite', 8, { art: true });
+check(unmapped.width === 96 && unmapped.height === 96, 'a sprite without new art must stay painted even when the slot opts in');
 
 /* ---------- a broken atlas falls back instead of throwing ---------- */
 

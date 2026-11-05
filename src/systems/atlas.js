@@ -13,17 +13,16 @@ export const ATLAS_META = 'assets/sprites/murmur_atlas.json';
 
 /**
  * Painted sprite -> atlas frame. This is the migration table from the art pack:
- * a name appears here only once its new art has been checked in a scene.
+ * a name appears here only once its new art has been checked in a scene, at a
+ * display size that does not shrink it.
  *
- * Small UI icons are deliberately absent. The painted 12x12 maps are drawn at
- * 40-70 px in the notebook and in answer cards; a 150 px painting squeezed into
- * that box would have to be resampled, which is the one thing the art pack asks
- * us not to do.
+ * Small UI icons are deliberately absent, and `book` is absent on purpose: its
+ * scene slot is smaller than the drawing, so it keeps the painted map until the
+ * layout gives it room (see docs/sprites.md for the numbers).
  */
 export const ART_MAP = {
   friend: 'boy-idle-front',
   ball: 'ball',
-  book: 'book',
   apple: 'apple',
 };
 

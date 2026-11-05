@@ -76,7 +76,7 @@ scaling anywhere.
              "pivot": { "x": 60, "y": 129 }, "clip": null }
 },
 "clips": [{ "name": "boy-walk", "frames": ["boy-walk-1", "…"], "fps": 8, "loop": true }],
-"map":   { "friend": "boy-idle-front", "ball": "ball", "book": "book", "apple": "apple" }
+"map":   { "friend": "boy-idle-front", "ball": "ball", "apple": "apple" }
 ```
 
 - `padding: 4` — frames never touch, so nothing bleeds at the edges.
@@ -102,8 +102,12 @@ Two details that keep the switch invisible to callers:
   `upgradeArt()` to repaint the same canvas when the atlas lands. A slow load
   shows the old art for a few milliseconds, a failed load keeps it for good.
 - **No hard dependency.** `ART_MAP` in `src/systems/atlas.js` is the migration
-  table. A name that is not in it is drawn from `SPRITES` as before, so
-  `spriteCanvas()` has one code path and the headless tests never need an image.
+  table, and a slot opts in explicitly:
+  `spriteCanvas(entry.sprite, 'obj__sprite', 8, { art: true })`. Only the play
+  stage passes it. Every other call site — the answer cards at 74 px, the lex
+  cards at 42 px, anything still unswapped — keeps the painted map, so the same
+  sprite can be a big drawing on stage and a crisp icon in the notebook. The
+  headless tests never need an image, and `npm run atlas` checks both paths.
 
 
 ## The scale question
@@ -124,8 +128,9 @@ On the play stage (880×550) the cast sizes are `sm` 88 px, `md` 132 px, `lg`
 shrinking a 154 px painting to 88 px is exactly the resampling the pack forbids.
 It needs a bigger slot in the scene first, or its own smaller drawing.
 
-Small UI icons (notebook cards at 74 px, lex cards at 42 px) stay painted for the
-same reason — a 12×12 map reads better at icon size than a downscaled painting.
+Small UI icons — the answer cards at 74 px and the lex cards at 42 px — stay
+painted for the same reason: a 12×12 map reads better at icon size than a
+downscaled painting.
 
 ## What is not wired yet
 

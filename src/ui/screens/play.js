@@ -115,7 +115,9 @@ export function renderPlay({ go, params }) {
         dataset: { id: entry.id, size: entry.size || 'md', flip: entry.flip ? '1' : '0' },
         style: { left: `${entry.x}%`, top: `${entry.y}%` },
       },
-      [spriteCanvas(entry.sprite, 'obj__sprite', 8), tag]
+      // The stage draws its cast large, so this is the one slot that opts in to
+      // the hi-res atlas (see docs/sprites.md for the size sums).
+      [spriteCanvas(entry.sprite, 'obj__sprite', 8, { art: true }), tag]
     );
     node.addEventListener('click', () => {
       sfx.tap();

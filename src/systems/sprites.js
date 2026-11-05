@@ -451,7 +451,7 @@ export function drawSprite(name, { unit = 6 } = {}) {
 }
 
 /** Sprite wrapped in a canvas with a class name, or an empty span if missing. */
-export function spriteCanvas(name, className = '', unit = 6) {
+export function spriteCanvas(name, className = '', unit = 6, { art = false } = {}) {
   const canvas = drawSprite(name, { unit });
   if (!canvas) {
     const fallback = document.createElement('span');
@@ -460,7 +460,8 @@ export function spriteCanvas(name, className = '', unit = 6) {
     return fallback;
   }
   if (className) canvas.className = `${className} pix`;
-  // Newer art for this name? Keep the painted pixels until it arrives.
-  if (hasArt(name)) upgradeArt(canvas, name);
+  // Only slots that opted in get the hi-res art: a 74 px card would have to
+  // shrink it, and shrinking is exactly what the art pack asks us not to do.
+  if (art && hasArt(name)) upgradeArt(canvas, name);
   return canvas;
 }
