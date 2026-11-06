@@ -11,6 +11,7 @@ import { chapterById, CHAPTERS, loc } from '../../content/index.js';
 import { roomFor, orderedObjects } from '../../content/rooms.js';
 import { buildGrid, moveEntity, findPath, pathToObject, objectsInReach, facingFor } from '../../systems/world.js';
 import { paintRoom, paintActors } from '../../systems/tiles.js';
+import { createScene3D } from '../../systems/scene3d.js';
 import { countObjectsDone, isObjectDone } from '../../engine/state.js';
 import { sfx, unlockAudio } from '../../systems/audio.js';
 import { openNotebookSheet } from './notebook.js';
@@ -84,15 +85,17 @@ export function renderExplore({ go, params }) {
 
   /* ---------- room layers ---------- */
 
-  const painted = paintRoom(room);
-  painted.canvas.classList.add('room__floor');
-  painted.canvas.setAttribute('aria-hidden', 'true');
+  // The painted room is the fallback, not the default: when WebGL2 answers, the
+  // 3D scene draws the same room as a place with a floor, walls, light and a
+  // camera that walks with the player. Everything else in this screen — the
+  // grid, the keys, the pathfinding, the beats — is untouched either way.
+  const search = typeof location === 'undefined' ? '' : location.search;
+  const wants3D = !/[?&]world=2d/.test(search);
 
-  const actors = document.createElement('canvas');
-  actors.className = 'room__actors';
-  actors.width = painted.canvas.width || roomW * 32;
-  actors.height = painted.canvas.height || roomH * 32;
-  actors.setAttribute('aria-hidden', 'true');
+  // Painted layers, built only if the 3D scene cannot be built. `painted` stays
+  // null when the renderer answers, which is what roomEl checks.
+  let painted = null;
+  let actors = null;
 
   const spots = el('div', { class: 'room__spots' });
   const spotNodes = new Map();
@@ -132,10 +135,41 @@ export function renderExplore({ go, params }) {
 
   const keys = el('p', { class: 'room__keys', text: t('walkHint') });
 
+  const scene3d = wants3D
+    ? createScene3D({
+        room,
+        provider: () => player,
+        onTile: (tile) => walkToTile(tile.tx, tile.ty),
+        onProp: (id) => {
+          const object = objects.find((entry) => entry.id === id);
+          if (object) approach(object);
+        },
+        nodes: spotNodes,
+        search,
+      })
+    : null;
+
+  // No WebGL2, no shader, no canvas: the room is exactly what it was in 2D.
+  if (!scene3d) {
+    painted = paintRoom(room);
+    painted.canvas.classList.add('room__floor');
+    painted.canvas.setAttribute('aria-hidden', 'true');
+
+    actors = document.createElement('canvas');
+    actors.className = 'room__actors';
+    actors.width = painted.canvas.width || roomW * 32;
+    actors.height = painted.canvas.height || roomH * 32;
+    actors.setAttribute('aria-hidden', 'true');
+  }
+
   const roomEl = el(
     'div',
-    { class: 'room', dataset: { theme: room.theme }, style: { aspectRatio: `${roomW} / ${roomH}` } },
-    [painted.canvas, actors, spots, hint]
+    {
+      class: scene3d ? 'room room--3d' : 'room',
+      dataset: { theme: room.theme },
+      style: { aspectRatio: `${roomW} / ${roomH}` },
+    },
+    scene3d ? [scene3d.el, spots, hint] : [painted.canvas, actors, spots, hint]
   );
 
   const stage = el('div', { class: 'room-stage' }, [roomEl]);
@@ -321,7 +355,7 @@ export function renderExplore({ go, params }) {
   }
 
   function onRoomClick(event) {
-    if (leaving) return;
+    if (leaving || scene3d) return; // in 3D the scene does the ray cast itself
     const rect = typeof roomEl.getBoundingClientRect === 'function' ? roomEl.getBoundingClientRect() : null;
     if (!rect || !rect.width || !rect.height) return;
     const tx = Math.floor(((event.clientX - rect.left) / rect.width) * roomW);
@@ -354,6 +388,7 @@ export function renderExplore({ go, params }) {
   /* ---------- frame loop ---------- */
 
   function draw() {
+    if (!actors) return; // the 3D scene reads the player's position itself
     paintActors(actors, room, [
       { kind: player.kind, x: player.x, y: player.y, dir: player.dir, frame: player.frame },
     ]);
@@ -409,6 +444,7 @@ export function renderExplore({ go, params }) {
         document.removeEventListener('keyup', onKeyUp);
       }
       if (typeof roomEl.removeEventListener === 'function') roomEl.removeEventListener('click', onRoomClick);
+      if (scene3d) scene3d.dispose();
       held.clear();
     },
   };

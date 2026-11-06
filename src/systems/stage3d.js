@@ -369,7 +369,7 @@ export function quadGeometry() {
 
 /* ---------- shaders ---------- */
 
-const SHADOW_GLSL = `
+export const SHADOW_GLSL = `
 float shadowAt(sampler2D map, vec4 lc) {
   vec3 p = lc.xyz / lc.w * 0.5 + 0.5;
   if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
@@ -407,7 +407,7 @@ float fbm(vec2 p) {
 }
 `;
 
-const SURFACE_VS = `#version 300 es
+export const SURFACE_VS = `#version 300 es
 in vec3 aPos;
 in vec3 aNrm;
 uniform mat4 uModel;
@@ -424,7 +424,7 @@ void main() {
   gl_Position = uViewProj * world;
 }`;
 
-const SURFACE_FS = `#version 300 es
+export const SURFACE_FS = `#version 300 es
 precision highp float;
 in vec3 vWorld;
 in vec3 vNrm;
@@ -512,7 +512,7 @@ void main() {
   fragColor = vec4(color, 1.0);
 }`;
 
-const BILLBOARD_VS = `#version 300 es
+export const BILLBOARD_VS = `#version 300 es
 in vec2 aPos;
 uniform vec3 uOrigin;
 uniform vec3 uRight;
@@ -532,7 +532,7 @@ void main() {
   gl_Position = uViewProj * vec4(world, 1.0);
 }`;
 
-const BILLBOARD_FS = `#version 300 es
+export const BILLBOARD_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
 in vec4 vLight;
@@ -573,7 +573,7 @@ void main() {
   fragColor = vec4(color, 1.0);
 }`;
 
-const DEPTH_VS = `#version 300 es
+export const DEPTH_VS = `#version 300 es
 in vec3 aPos;
 uniform mat4 uModel;
 uniform mat4 uLightVP;
@@ -581,11 +581,11 @@ void main() {
   gl_Position = uLightVP * uModel * vec4(aPos, 1.0);
 }`;
 
-const DEPTH_FS = `#version 300 es
+export const DEPTH_FS = `#version 300 es
 precision highp float;
 void main() {}`;
 
-const DEPTH_SPRITE_VS = `#version 300 es
+export const DEPTH_SPRITE_VS = `#version 300 es
 in vec2 aPos;
 uniform vec3 uOrigin;
 uniform vec3 uRight;
@@ -600,7 +600,7 @@ void main() {
   gl_Position = uLightVP * vec4(world, 1.0);
 }`;
 
-const DEPTH_SPRITE_FS = `#version 300 es
+export const DEPTH_SPRITE_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uTex;
@@ -608,7 +608,7 @@ void main() {
   if (texture(uTex, vUv).a < 0.45) discard;
 }`;
 
-const POST_VS = `#version 300 es
+export const POST_VS = `#version 300 es
 in vec2 aPos;
 out vec2 vUv;
 void main() {
@@ -616,7 +616,7 @@ void main() {
   gl_Position = vec4(aPos, 0.0, 1.0);
 }`;
 
-const POST_FS = `#version 300 es
+export const POST_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform float uVignette;

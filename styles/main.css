@@ -1634,6 +1634,41 @@ button {
   background: radial-gradient(46% 40% at 24% 14%, rgba(160, 190, 255, 0.18), transparent 74%);
 }
 
+/* The 3D room: the canvas is the set, the hotspots are its hit areas.
+   Clicking the floor has to reach the canvas, so the label layer stops
+   catching pointers and only the buttons themselves keep them. */
+
+.room--3d {
+  background: #0a0813;
+}
+
+.room--3d::before {
+  display: none; /* the renderer already lights that corner */
+}
+
+.room--3d .scene3d {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.room--3d .room__spots {
+  pointer-events: none;
+}
+
+.room--3d .hotspot {
+  pointer-events: auto;
+}
+
+.room--3d .room__hint {
+  z-index: 4;
+}
+
 /* hotspots: the things you can walk up to */
 
 .room__spots {

@@ -63,12 +63,17 @@ thing I named", spelling from letter chips, and optional microphone practice.
 
 ## Rooms
 
-Each chapter is a place you walk around in, Escapists-style: a top-down room on a
-tile grid, a small sprite under your control, and furniture you can bump into.
+Each chapter is a place you walk around in, Escapists-style: a room on a tile
+grid, a small sprite under your control, and furniture you can bump into.
 There is no "next" button anywhere — **walking up to something and pressing
 `E`/Space (or tapping it) is what plays that part of the chapter.** When its beats
 finish you are back on the floor with one fewer thing left to understand, and the
 chapter ends on its own once the room has nothing left to say.
+
+That room is drawn twice: as a painted tile map, and — when the browser has
+WebGL2 — as a real 3D place with a floor, walls, a window, furniture built from
+box recipes, one shadow map and a camera that trails the player. Both play the
+same game; `?world=2d` picks the painted one. See `docs/3d.md`.
 
 | Input | Does |
 | --- | --- |
