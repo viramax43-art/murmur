@@ -503,6 +503,10 @@ void main() {
   vec3 color = albedo * (sun + fill + sky + bounce + lamp) + uSunColor * spec * 0.4;
   color += albedo * uGlow * 2.4 + uTint;
 
+  // an emissive panel is a light, not a surface: shading it lets the frame cast
+  // hatching across the glass, which reads as dirt on the window
+  if (uGlow > 0.5) color = albedo * uGlow * 2.4 + uTint;
+
   color = pow(aces(color * uExposure), vec3(1.0 / 2.2));
   color += (hash21(gl_FragCoord.xy * 0.83) - 0.5) / 255.0;
   fragColor = vec4(color, 1.0);
