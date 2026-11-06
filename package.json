@@ -15,6 +15,7 @@
     "sprites": "node tools/sprites.mjs",
     "sprites:verify": "node tools/sprites.mjs --verify",
     "atlas": "node tools/atlas-check.mjs",
-    "test": "node tools/validate.mjs && node tools/sprites.mjs --verify && node tools/atlas-check.mjs && node tools/boot-check.mjs && node tools/room-check.mjs && node tools/smoke.mjs"
+    "stage3d": "node tools/stage3d-check.mjs",
+    "test": "node tools/validate.mjs && node tools/sprites.mjs --verify && node tools/atlas-check.mjs && node tools/stage3d-check.mjs && node tools/boot-check.mjs && node tools/room-check.mjs && node tools/smoke.mjs"
   }
 }

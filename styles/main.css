@@ -600,6 +600,51 @@ button {
   background: radial-gradient(40% 40% at 78% 14%, rgba(160, 190, 255, 0.22), transparent 72%);
 }
 
+/* ---------- 3D stage ---------- */
+
+.stage--3d {
+  background: #0a0a12;
+}
+
+/* the renderer antialiases already: scanlines over it read as dirt on the lens */
+.stage--3d::before {
+  display: none;
+}
+
+/* light is in the scene now, not in a gradient */
+.stage--3d .stage__light {
+  display: none;
+}
+
+.stage3d {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The sprites stay in the DOM and stay laid out: they are the hit areas, the
+   tags and the size classes the beats animate. Only their pixels are hidden —
+   the same figure is drawn by the renderer, in the room. */
+.stage--3d .obj__sprite {
+  opacity: 0;
+}
+
+.stage--3d .obj.is-speaking,
+.stage--3d .obj.is-hint,
+.stage--3d .obj.is-wrong {
+  animation: none;
+}
+
+/* keep the tags readable over a photograph-like stage */
+.stage--3d .obj__tag {
+  background: rgba(8, 6, 14, 0.92);
+  backdrop-filter: blur(2px);
+}
+
+
 /* beat UI layer: dialogue, prompts and panels stack above the sprites */
 
 .layer {

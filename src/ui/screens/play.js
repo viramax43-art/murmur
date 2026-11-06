@@ -16,6 +16,7 @@ import {
 import { CHAPTERS, chapterById, loc } from '../../content/index.js';
 import { conceptSprite } from '../../content/concepts.js';
 import { spriteCanvas } from '../../systems/sprites.js';
+import { createStage3D } from '../../systems/stage3d.js';
 import {
   speak,
   stopSpeaking,
@@ -128,6 +129,19 @@ export function renderPlay({ go, params }) {
   }
 
   stage.append(layer);
+
+  // The 3D stage: a real room, real light, and the same cast standing in it as
+  // billboards. Opt out with ?stage=2d; without WebGL2 createStage3D() returns
+  // null and this screen is exactly the CSS stage it was before.
+  const search = typeof location === 'undefined' ? '' : location.search;
+  const wants3D = !/[?&]stage=2d/.test(search);
+  const stage3d = wants3D ? createStage3D({ cast: chapter.cast, bg: chapter.bg, search }) : null;
+  if (stage3d) {
+    stage.classList.add('stage--3d');
+    stage.append(stage3d.el);
+    stage3d.bind(objects);
+  }
+
   const wrap = el('div', { class: 'stage-wrap' }, [stage]);
   const screen = el('div', { class: 'screen screen--play' }, [hud, wrap]);
 
@@ -627,6 +641,7 @@ export function renderPlay({ go, params }) {
       cancelled = true;
       settle('cancel');
       stopSpeaking();
+      if (stage3d) stage3d.dispose();
       clear(layer);
     },
   };
