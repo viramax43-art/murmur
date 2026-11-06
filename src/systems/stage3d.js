@@ -36,6 +36,14 @@ const FOV = (40 * Math.PI) / 180;
 const SHADOW_SIZE = 2048;
 const MAX_CAST = 12;
 
+/**
+ * How much of the room's exposure a figure gets. The stage's surfaces are dark
+ * and its cast is pale: at the surface stop a face arrives with three times the
+ * light it needs and clips to white, so the billboards are stopped down instead.
+ * scene3d.js uses the same number for the same reason.
+ */
+const BILLBOARD_STOP = 0.34;
+
 // `.obj[data-size]` heights in styles/main.css, as a fraction of the stage box.
 const SIZE = { sm: 0.16, md: 0.24, lg: 0.38, xl: 0.52 };
 
@@ -894,7 +902,9 @@ export function createStage3D({ cast = [], bg = 'nursery', search = '', doc } = 
     gl.uniform3fv(billboard.uniform('uAmbGround'), palette.ambGround);
     gl.uniform3fv(billboard.uniform('uLampPos'), LAMP);
     gl.uniform3fv(billboard.uniform('uLampColor'), lampColor);
-    gl.uniform1f(billboard.uniform('uExposure'), palette.exposure);
+    // the same stop as the walkable room: a figure's pale skin is three times
+    // brighter than the walls it stands in front of, and would clip to white
+    gl.uniform1f(billboard.uniform('uExposure'), palette.exposure * BILLBOARD_STOP);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, shadow.texture);
     gl.uniform1i(billboard.uniform('uShadow'), 0);

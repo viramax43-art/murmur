@@ -23,6 +23,7 @@ npm test              # everything below, in order
 npm run validate      # content + i18n + sprite + room audit (fails loudly on bad data)
 npm run sprites:verify # the committed sprite atlas still matches the source sheet
 npm run atlas         # the atlas loader and frame drawing, on a stub canvas
+npm run figures       # the generated cast: faces, views, walk cycles, detail budget
 npm run check         # imports every module under a DOM stub
 npm run rooms         # paints every room and pathfinds every hotspot from the spawn
 npm run smoke         # headless playthrough: title -> 5 rooms -> notebook
@@ -122,6 +123,31 @@ npm run sprites:verify # nothing resamples, nothing is stale, nothing lacks a ha
 If the atlas is missing or broken, every sprite quietly stays painted, so the
 game never depends on the art pack to boot.
 
+### Figures: the people and animals
+
+The 12×12 painted maps are perfect at icon size and a mosaic when a 1.7 m adult
+fills a 286 px stage slot: one "pixel" of such a map is a fifth of a head. So the
+cast is drawn procedurally instead, on a 44×64 cell grid with three-tone form
+shading, an ink silhouette, faces, hair, clothes, folds and swinging limbs.
+
+```bash
+npm run figures   # the shapes, the faces, the walk cycles and the 16x claim, in Node
+```
+
+* `src/systems/figures.js` — a raster of materials and tones (spheres for heads,
+  capsules for limbs), then an outline pass, then pixels. `figureGrid()` is pure
+  and testable; `figureCanvas()` is the only part that needs a DOM
+* Palette identity is kept: mama is pink, papa blue, the teacher lavender, the
+  baby aqua, the dog brown, the cat violet, the blue bird blue
+* Four views (`front`, `side`, `back`) and a four-frame walk cycle, so the player
+  in the walkable room is animated instead of bobbing
+* The art pack still wins where it has a drawing: `friend` (the boy), `ball` and
+  `apple` are atlas frames on the stage, and `figureCanvas` only answers where it
+  does not
+* `tools/figures-check.mjs` — the detail budget against the painted maps (8× cells
+  minimum, 17× for mama), that a person has eyes, a mouth and clothes, that the
+  views differ, that the walk cycle moves, and that two calls give the same bytes
+
 ## Cutscenes
 
 Chapters are bookended by rendered stills — real human base meshes lit and
@@ -152,12 +178,13 @@ src/main.js           boot: load save, apply prefs, mount router, go('title')
 src/engine/state.js   save/load, lexicon, chapter + room-object progress
 src/lang/             pack definitions + keyForToken/tokenize
 src/content/          concepts, chapters 1-5, rooms, cutscene table, localization helper
-src/systems/          speech (TTS + ASR), audio (sfx), sprites (pixel art), world, tiles
+src/systems/          speech (TTS + ASR), audio (sfx), sprites (pixel art), figures (the cast), world, tiles
 src/ui/               dom helpers, i18n, line rendering, router, cutscene, chapterflow, 5 screens
 assets/cutscenes/     Blender renders (generated, safe to delete and rebuild)
 assets/sprites/       sliced concept art: cutouts + murmur_atlas.png + JSON
 assets/source/        the original art sheet, kept for rebuilds
-tools/                validate.mjs, sprites.mjs, png.mjs, atlas-check.mjs, boot-check.mjs, room-check.mjs, smoke.mjs
+tools/                validate.mjs, sprites.mjs, png.mjs, atlas-check.mjs, figures-check.mjs,
+                      boot-check.mjs, room-check.mjs, smoke.mjs
 tools/blender/        the cutscene pipeline (Python, runs inside Blender)
 docs/                 room format, sprite pipeline, cutscene shot list + reference brief
 ```

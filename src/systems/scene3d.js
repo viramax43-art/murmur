@@ -43,6 +43,7 @@ import {
   resolutionFor,
 } from './stage3d.js';
 import { spriteCanvas } from './sprites.js';
+import { figureCanvas, hasFigure } from './figures.js';
 import {
   TILE,
   actorHeight,
@@ -61,12 +62,43 @@ const SHADOW_SIZE = 2048;
 const MAX_SPRITES = 48;
 const ZERO = [0, 0, 0];
 
+/**
+ * How much of the room's exposure the billboards get. Measured, not guessed: the
+ * room's surfaces arrive at roughly 0.3 of a linear unit and its figures at 2.5,
+ * so a pale face needs about a third of the stop to land on its own colour.
+ */
+const BILLBOARD_STOP = 0.34;
+
+/** Cells per art pixel for the figures standing in the room. */
+const FIGURE_UNIT = 4;
+
+/**
+ * Figures are drawn at sixteen times the detail of the painted maps (see
+ * ./figures.js), which is what makes a person readable at the size a room card
+ * gives them. A pose is a property of the *scene*, not of the sprite: the
+ * nursery's mama leans over the crib, which is what her hotspot says she is
+ * doing, and everyone else stands.
+ */
+const FIGURE_POSE = { mama: 'lean' };
+
+function figureSource(name, { view = 'front', pose = 'idle', frame = 0, unit = FIGURE_UNIT } = {}) {
+  if (!hasFigure(name)) return null;
+  return figureCanvas(name, { unit, view, pose, frame });
+}
+
 /** A sprite canvas for a name, or null when the name has no art at all. */
-function spriteSource(name) {
+function spriteSource(name, pose = 'idle') {
   if (typeof document === 'undefined') return null;
-  const canvas = spriteCanvas(name, '', 16);
+  const canvas = figureSource(name, { pose }) || spriteCanvas(name, '', 16);
   if (!canvas || !canvas.width || !canvas.height) return null;
   return canvas;
+}
+
+/** Which drawing of a body faces a direction. Left is the side view, flipped. */
+function viewForDir(dir) {
+  if (dir === 'left' || dir === 'right') return 'side';
+  if (dir === 'up') return 'back';
+  return 'front';
 }
 
 /**
@@ -187,9 +219,9 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
    */
   const slots = [];
 
-  function addSlot({ id, sprite, origin, height, node = null, kind = 'prop' }) {
+  function addSlot({ id, sprite, origin, height, node = null, kind = 'prop', pose = 'idle' }) {
     if (slots.length >= MAX_SPRITES) return null;
-    const source = spriteSource(sprite);
+    const source = spriteSource(sprite, pose);
     if (!source) return null;
     const slot = {
       id,
@@ -214,6 +246,7 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     addSlot({
       id: prop.id,
       sprite: prop.sprite,
+      pose: FIGURE_POSE[prop.sprite] || 'idle',
       origin: [prop.center[0], 0, prop.center[2]],
       height: prop.height,
       node: nodes && typeof nodes.get === 'function' ? nodes.get(prop.id) || null : null,
@@ -232,6 +265,34 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     height: actorHeight(room),
     kind: 'player',
   });
+
+  /**
+   * The player is the one body in the room that moves, so it is the one body
+   * that needs more than one drawing: a walk cycle per facing, built on demand
+   * and shared between frames. `playerSheet` is what stagePlayer() advances.
+   */
+  const playerName = actorSprite(room);
+  const playerSheets = new Map();
+
+  function playerSheet(view, pose, frame) {
+    if (!playerSlot || !hasFigure(playerName)) return null;
+    const key = `${playerName}|${view}|${pose}|${frame}`;
+    const hit = playerSheets.get(key);
+    if (hit) return hit;
+    const canvas = figureSource(playerName, { view, pose, frame });
+    if (!canvas) return null;
+    const sheet = { texture: canvasTexture(gl, canvas), aspect: canvas.width / canvas.height };
+    playerSheets.set(key, sheet);
+    return sheet;
+  }
+
+  function dressPlayer(view, pose, frame) {
+    const sheet = playerSheet(view, pose, frame);
+    if (!sheet) return;
+    playerSlot.texture = sheet.texture;
+    playerSlot.aspect = sheet.aspect;
+    playerSlot.pose = `${view}/${pose}/${frame}`;
+  }
 
   /**
    * Where each hotspot's DOM label sits. Furniture built as boxes has no
@@ -279,6 +340,10 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
 
   /* ---------- per-frame staging ---------- */
 
+  let walked = [0, 0, 0];
+  let stride = 0;
+  let lastSeconds = 0;
+
   function has(slot, name) {
     const node = slot.node;
     return Boolean(node && node.classList && node.classList.contains(name));
@@ -293,9 +358,21 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     if (!playerSlot) return [0, 0, 0];
     const player = playerPosition();
     const world = posToWorld(room, player);
-    const bob = reduceMotion ? 0 : Math.sin(seconds * 7.5) * (player.frame ? 0.035 : 0.01);
+    const dx = world[0] - walked[0];
+    const dz = world[2] - walked[2];
+    const dt = Math.min(0.12, Math.max(0, seconds - lastSeconds));
+    lastSeconds = seconds;
+    walked = world;
+    const moving = Boolean(player.frame) || Math.hypot(dx, dz) > 0.002;
+    if (moving && !reduceMotion) {
+      stride = (stride + dt * 8) % 4;
+    } else {
+      stride = 0;
+    }
+    const bob = reduceMotion ? 0 : Math.sin(seconds * 7.5) * (moving ? 0.02 : 0.008);
     playerSlot.origin = [world[0], 0.006 + bob, world[2]];
     playerSlot.flip = player.dir === 'left';
+    dressPlayer(viewForDir(player.dir), moving ? 'walk' : 'idle', Math.floor(stride) % 4);
     return world;
   }
 
@@ -434,7 +511,11 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     gl.uniform3fv(billboard.uniform('uAmbGround'), light.ambGround);
     gl.uniform3fv(billboard.uniform('uLampPos'), plan.lamp);
     gl.uniform3fv(billboard.uniform('uLampColor'), light.lampColor);
-    gl.uniform1f(billboard.uniform('uExposure'), light.exposure);
+    // The room's own albedos are dark, so its exposure is set for them. A
+    // figure's albedo is a face: at the room's stop a pale skin tone arrives at
+    // three times the light it needs and clips to white, so the billboards are
+    // stopped down instead.
+    gl.uniform1f(billboard.uniform('uExposure'), light.exposure * BILLBOARD_STOP);
     gl.uniform1i(billboard.uniform('uTex'), 0);
     gl.uniform1i(billboard.uniform('uShadow'), 1);
     gl.activeTexture(gl.TEXTURE1);
@@ -594,6 +675,10 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     }
     if (view && typeof view.removeEventListener === 'function') view.removeEventListener('resize', resize);
     for (const slot of slots) if (slot.texture) gl.deleteTexture(slot.texture);
+    for (const sheet of playerSheets.values()) {
+      if (sheet.texture !== (playerSlot && playerSlot.texture)) gl.deleteTexture(sheet.texture);
+    }
+    playerSheets.clear();
     gl.deleteBuffer(cube);
     gl.deleteBuffer(quad);
     gl.deleteBuffer(screenQuad);

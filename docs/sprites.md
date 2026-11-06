@@ -132,13 +132,81 @@ Small UI icons — the answer cards at 74 px and the lex cards at 42 px — stay
 painted for the same reason: a 12×12 map reads better at icon size than a
 downscaled painting.
 
+## Figures: the cast, drawn rather than sliced
+
+The sheet has one boy and no grown-ups, so `src/systems/figures.js` draws the rest
+of the cast in code, in the same palette and with the same hard edges.
+
+The problem it solves is a measurement. A painted map is 12×12 letters, and on the
+play stage a `xl` slot is 286 px tall: one letter of `mama` is a fifth of her head.
+Enlarging that map is what the module header of `sprites.js` calls a mosaic, and it
+is what the cast looked like on the 3D stage.
+
+So a figure is authored on its own grid — 44×64 cells for a grown-up, 30×24 for the
+bird — and rasterized in three passes:
+
+1. **Shape.** Spheres for heads, hands, eyes and snouts; capsules for torsos, arms,
+   legs, tails and necks; plates and polygons for collars, soles, beaks and ears.
+   Each one shades itself: a pixel's offset from the centre of a sphere (or from the
+   axis of a capsule) is its normal, so a single key light from the upper left gives
+   a highlight, a base and two shadows.
+2. **Detail.** Face (sclera, iris, catchlight, nose, mouth, blush, spectacles), hair
+   (a skull cap with the face cut out of it, then locks and a style), clothes
+   (collar, placket, buttons, cuff, hem, folds, apron straps) and animals (muzzle,
+   whiskers, stripes, tail bands, feather lines).
+3. **Finish.** A contact shade on every cell with air under it, then the ink
+   silhouette: one cell of `#17111f` wherever the body meets the air — the same ink
+   the painted maps use.
+
+Then the drawing is cropped to the columns it actually occupies, so the aspect a
+billboard is sized from is the body's, not the authoring box's.
+
+| body    | painted cells | figure cells | ratio |
+| ------- | ------------- | ------------ | ----- |
+| mama    | 88            | 1505         | 17.1× |
+| papa    | 88            | 1464         | 16.6× |
+| teacher | 92            | 1453         | 15.8× |
+| dog     | 72            | 1016         | 14.1× |
+| friend  | 90            | 1147         | 12.7× |
+| baby    | 72            | 749          | 10.4× |
+| cat     | 72            | 592          | 8.2×  |
+| bird    | 70            | 309          | 4.4×  |
+
+The smallest unit of a figure is one cell instead of a twelfth of a body, which is
+the honest version of "sixteen times the detail": roughly sixteen times the *area*
+for the grown-ups, a few times for the small animals.
+
+```bash
+npm run figures   # shapes, faces, views, walk cycles, determinism
+```
+
+`tools/figures-check.mjs` asserts all of it in Node, because the raster is data:
+the detail budget above, an ink outline, at least twelve material/tone pairs, eyes
+and a mouth on a person, `front`/`side`/`back` being different drawings, the four
+walk frames moving, and the same call giving the same bytes twice.
+
+Where each drawing is used:
+
+* **the play stage** — every cast member that the atlas does not own: mama, papa,
+  baby, teacher, dog. `friend` (the boy), `ball` and `apple` stay atlas frames,
+  because a real drawing beats a generated one.
+* **the walkable room** — every body, including the player, which is the one thing
+  in the room that moves: `scene3d.js` keeps a sheet per view and walks the four
+  frames while the player walks, then holds the idle drawing when they stop.
+* **the 2D room fallback** — unchanged: `paintActors()` in `tiles.js` draws a ~10
+  art-pixel figure, because that room is 32 device pixels per tile.
+
+The stage and the room both stop the billboards down to `0.34` of the room's
+exposure (`BILLBOARD_STOP`): the surfaces are dark, the cast is pale, and at the
+surface stop a face arrives with three times the light it needs and clips to white.
+
 ## What is not wired yet
 
-- **The room.** `paintActors()` draws the player as a ~10 art-pixel figure on a
-  room surface of 32 device pixels per tile. Dropping a 300 px boy in there means
-  shrinking him ~6×, or redrawing the floors and walls at the new resolution —
-  a full art pass, not a swap. The clips and pivots above are ready for it, and
-  `assets/sprites/murmur/boy-walk.png` is a uniform 4-cell strip for grid loaders.
+- **The room grid.** `paintActors()` still draws the 2D room's player as a ~10
+  art-pixel figure on a room surface of 32 device pixels per tile. That room is the
+  fallback now (`?world=2d`): the default room is the WebGL2 one, and it uses
+  figures. Redrawing the floors at the new resolution would still be a full art
+  pass, not a swap.
 - **Collisions.** Untouched, deliberately. Walls and props are a tile grid
   (`src/content/rooms.js` → `buildGrid`), and no sprite pixel feeds physics, so
   swapping art cannot change where the player can stand.

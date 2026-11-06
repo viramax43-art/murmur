@@ -16,6 +16,8 @@ import {
 import { CHAPTERS, chapterById, loc } from '../../content/index.js';
 import { conceptSprite } from '../../content/concepts.js';
 import { spriteCanvas } from '../../systems/sprites.js';
+import { hasArt } from '../../systems/atlas.js';
+import { figureCanvas, hasFigure } from '../../systems/figures.js';
 import { createStage3D } from '../../systems/stage3d.js';
 import {
   speak,
@@ -107,6 +109,20 @@ export function renderPlay({ go, params }) {
   const layer = el('div', { class: 'layer' });
   const objects = new Map();
 
+  // A person is drawn at sixteen times the detail of a painted map; the artwork
+  // the pack ships (the boy, the ball, the apple) still wins where it exists,
+  // because a real drawing beats a generated one. See docs/sprites.md.
+  const UNIT_FOR_SIZE = { sm: 3, md: 4, lg: 6, xl: 8 };
+
+  function castCanvas(entry) {
+    const unit = UNIT_FOR_SIZE[entry.size] || 5;
+    if (!hasArt(entry.sprite) && hasFigure(entry.sprite)) {
+      const canvas = figureCanvas(entry.sprite, { unit, className: 'obj__sprite' });
+      if (canvas) return canvas;
+    }
+    return spriteCanvas(entry.sprite, 'obj__sprite', 8, { art: true });
+  }
+
   for (const entry of chapter.cast) {
     const tag = el('span', { class: 'obj__tag' });
     const node = el(
@@ -116,9 +132,7 @@ export function renderPlay({ go, params }) {
         dataset: { id: entry.id, size: entry.size || 'md', flip: entry.flip ? '1' : '0' },
         style: { left: `${entry.x}%`, top: `${entry.y}%` },
       },
-      // The stage draws its cast large, so this is the one slot that opts in to
-      // the hi-res atlas (see docs/sprites.md for the size sums).
-      [spriteCanvas(entry.sprite, 'obj__sprite', 8, { art: true }), tag]
+      [castCanvas(entry), tag]
     );
     node.addEventListener('click', () => {
       sfx.tap();
