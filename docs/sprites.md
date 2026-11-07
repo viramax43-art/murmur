@@ -190,15 +190,18 @@ Where each drawing is used:
 * **the play stage** — every cast member that the atlas does not own: mama, papa,
   baby, teacher, dog. `friend` (the boy), `ball` and `apple` stay atlas frames,
   because a real drawing beats a generated one.
-* **the walkable room** — every body, including the player, which is the one thing
-  in the room that moves: `scene3d.js` keeps a sheet per view and walks the four
-  frames while the player walks, then holds the idle drawing when they stop.
+* **the walkable room** — as the *fallback* now. The room's cast is built from
+  primitives (`bodies3d.js`, see `docs/3d.md`), and any sprite `bodyPlan()` has no
+  kit for still draws here as a figure. The player keeps a sheet per view for that
+  same fallback; in first person you look out of the body, not at the card.
 * **the 2D room fallback** — unchanged: `paintActors()` in `tiles.js` draws a ~10
   art-pixel figure, because that room is 32 device pixels per tile.
 
-The stage and the room both stop the billboards down to `0.34` of the room's
-exposure (`BILLBOARD_STOP`): the surfaces are dark, the cast is pale, and at the
-surface stop a face arrives with three times the light it needs and clips to white.
+The stage stops its billboards down to `0.34` of the room's exposure
+(`BILLBOARD_STOP`): the surfaces are dark, the cast is pale, and at the surface stop
+a face arrives with three times the light it needs and clips to white. A volume does
+not need that correction, so the bodies are drawn in the room's own surface pass and
+take the room's stop — which is also what puts a body and a wall in the same light.
 
 ## What is not wired yet
 

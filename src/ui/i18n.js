@@ -77,7 +77,7 @@ const en = {
   heardTimes: 'heard {n}×',
   emptyNotebook: 'Nothing yet. Go and live a chapter.',
   tapWordHint: 'Tap a word to hear it again.',
-  walkHint: 'WASD or arrows to walk — tap the floor to walk there',
+  walkHint: 'WASD to walk · mouse or drag to look · double-click for free look',
   look: 'Look',
   notNow: 'Not this one yet.',
 };
@@ -158,7 +158,7 @@ const ru = {
   heardTimes: 'слышал {n} раз',
   emptyNotebook: 'Пока пусто. Проживи хотя бы одну главу.',
   tapWordHint: 'Нажми на слово, чтобы услышать его снова.',
-  walkHint: 'WASD или стрелки — идти; нажми на пол, чтобы дойти',
+  walkHint: 'WASD — идти · мышь или свайп — смотреть · двойной клик — свободный обзор',
   look: 'Посмотреть',
   notNow: 'Не это сейчас.',
 };

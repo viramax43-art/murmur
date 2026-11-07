@@ -73,15 +73,19 @@ chapter ends on its own once the room has nothing left to say.
 
 That room is drawn twice: as a painted tile map, and — when the browser has
 WebGL2 — as a real 3D place with a floor, walls, a window, furniture built from
-box recipes, one shadow map and a camera that trails the player. Both play the
-same game; `?world=2d` picks the painted one. See `docs/3d.md`.
+box recipes, a cast built from primitives (a head, a chest, arms, legs, a tail —
+in the card's own palette), one shadow map, and a first-person camera in the
+player's head. Both play the same game; `?world=2d` picks the painted one. See
+`docs/3d.md`.
 
 | Input | Does |
 | --- | --- |
-| `W A S D` / arrows | walk (grid collisions, wall sliding) |
+| `W A S D` | walk, relative to where you are looking |
+| arrows `←` `→` | turn |
 | `E` / `Space` / `Enter` | look at whatever you are standing next to |
 | tap an object | walk there by itself, then look at it |
 | tap the floor | walk to that tile |
+| double-tap | free look (drag to turn the head) |
 | `▤` | notebook |
 
 * `src/content/rooms.js` — the rooms: an ASCII map, a theme, and hotspots whose
@@ -90,6 +94,13 @@ same game; `?world=2d` picks the painted one. See `docs/3d.md`.
   pathfinding, "what am I standing next to" (pure functions, no DOM)
 * `src/systems/tiles.js` — the pixel painter: 8 art-pixels per tile, floors, walls,
   decor, furniture and the two-frame walk cycle, all drawn in code
+* `src/systems/world3d.js` — the same room as a plan in metres: wall runs, props,
+  camera, light (pure; `npm run world3d` asserts it)
+* `src/systems/bodies3d.js` — the cast as parts: one kit of ratios builds a 1.7 m
+  papa and a 0.78 m baby out of spheres, capsules, cones and domes
+  (pure; `npm run bodies`)
+* `src/systems/scene3d.js` — the WebGL2 picture: programs, shadow map, draw order,
+  picking; returns `null` when the browser cannot, and the painted room is used
 * `src/ui/screens/explore.js` — the screen: keyboard, tap-to-walk, camera-free fit,
   hotspot markers, chapter progress
 * `src/ui/chapterflow.js` — chapter boundaries: opening still → room → closing

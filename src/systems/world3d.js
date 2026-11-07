@@ -18,10 +18,16 @@ import { add, cross, lookAt, multiply, normal, perspective, scale, sub } from '.
 export const TILE = 0.62; // metres per room tile: an 18x12 room is 11.2 x 7.4 m
 export const WALL_H = 3.05;
 export const FENCE_H = 0.95;
-export const SKIRT_H = 0.3; // the south wall, kept low so it never blocks the lens
-export const EYE_HEIGHT = 2.62;
-export const TRAIL = 5.6; // how far the camera trails behind the player
-export const FOV = (46 * Math.PI) / 180;
+export const SKIRT_H = 0.3;
+// The game is played through the character's eyes, so these are eye heights and
+// not camera offsets: a five-year-old sees the room from 1.34 m, and a baby on
+// the floor from 0.62 m, which is what makes chapter one feel low and clumsy.
+export const EYE_CHILD = 1.34;
+export const EYE_BABY = 0.62;
+export const VIEW_FOV = (68 * Math.PI) / 180; // vertical, the usual first-person width
+export const NEAR = 0.045;
+export const FAR = 60;
+export const PITCH_LIMIT = (78 * Math.PI) / 180;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -685,27 +691,76 @@ export function plantPlan(room) {
 /* ---------- camera ---------- */
 
 /**
- * Third-person camera: behind the player, a little above the floor, pitched down
- * so the room reads as a place rather than a backdrop. `sway` is the pointer
- * parallax — it moves the eye by centimetres, never the composition.
+ * First person. `yaw` 0 looks towards +z, the near wall of the map, so the room
+ * turns around the player instead of the camera hanging behind them. `bob` is
+ * the step in metres and `sway` the lens lean; both move the eye, never the
+ * composition. The caller owns yaw and pitch, because turning is gameplay.
  */
-export function cameraForPlayer(pos, aspect, sway = { x: 0, y: 0 }) {
-  const eye = [pos[0] + (sway.x || 0), EYE_HEIGHT + (sway.y || 0), pos[2] + TRAIL];
-  const target = [pos[0] * 0.9, 0.72, pos[2] - 0.6];
-  const forward = normal(sub(target, eye));
+export function cameraForEye(pos, opts = {}) {
+  const {
+    yaw = 0,
+    pitch = 0,
+    eye = EYE_CHILD,
+    aspect = 1.6,
+    bob = 0,
+    sway = { x: 0, y: 0 },
+    fov = VIEW_FOV,
+  } = opts;
+  const eyePos = [pos[0] + (sway.x || 0), eye + bob + (sway.y || 0), pos[2]];
+  const flat = Math.cos(pitch);
+  const forward = normal([Math.sin(yaw) * flat, Math.sin(pitch), Math.cos(yaw) * flat]);
+  const target = add(eyePos, forward);
   const right = normal(cross(forward, [0, 1, 0]));
   const up = normal(cross(right, forward));
   return {
-    eye,
+    eye: eyePos,
     target,
     forward,
     right,
     up,
-    fov: FOV,
+    yaw,
+    pitch,
+    fov,
     aspect,
-    view: lookAt(eye, target),
-    projection: perspective(FOV, aspect, 0.08, 48),
+    view: lookAt(eyePos, target),
+    projection: perspective(fov, aspect, NEAR, FAR),
   };
+}
+
+/** Eye height for a room's actor: a baby on the floor, a child on their feet. */
+export function eyeFor(room) {
+  return room && room.actor === 'baby' ? EYE_BABY : EYE_CHILD;
+}
+
+/** The view angle a body faces, for the tile-grid directions. */
+export function yawForDir(dir) {
+  if (dir === 'up') return Math.PI;
+  if (dir === 'left') return -Math.PI / 2;
+  if (dir === 'right') return Math.PI / 2;
+  return 0; // 'down', towards the near wall
+}
+
+/** The tile-grid direction a view angle is closest to. */
+export function dirForYaw(yaw) {
+  const turn = ((yaw % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  if (turn < Math.PI / 4 || turn >= (Math.PI * 7) / 4) return 'down';
+  if (turn < (Math.PI * 3) / 4) return 'right';
+  if (turn < (Math.PI * 5) / 4) return 'up';
+  return 'left';
+}
+
+/** Yaw and pitch from one point to another — what a hot spot's gaze wants. */
+export function lookAtPoint(from, to) {
+  const dx = to[0] - from[0];
+  const dy = (to[1] || 0) - (from[1] || 0);
+  const dz = to[2] - from[2];
+  const flat = Math.hypot(dx, dz) || 1;
+  return { yaw: Math.atan2(dx, dz), pitch: Math.atan2(dy, flat) };
+}
+
+/** Keep a pitch inside the neck's range instead of rolling the horizon over. */
+export function clampPitch(pitch) {
+  return clamp(pitch, -PITCH_LIMIT, PITCH_LIMIT);
 }
 
 /** Ray through a point of the canvas, given in 0..1 screen space. */
@@ -768,5 +823,20 @@ export function actorSprite(room) {
 
 export function actorHeight(room) {
   return room.actor === 'baby' ? SPRITE_HEIGHT.baby : SPRITE_HEIGHT.child;
+}
+
+/**
+ * Eye height as a fraction of stature. It is how a camera height becomes a body:
+ * the lens sits in the actor's head, so the body has to be tall enough to hold it.
+ * A child carries their eyes higher up their own body than an adult does, and a
+ * baby higher still, which is why one ratio is not enough.
+ */
+const EYE_RATIO = { adult: 0.935, child: 0.905, baby: 0.86 };
+
+/** How tall the player's body is, given the eye the chapter plays from. */
+export function actorBodyHeight(room) {
+  const baby = Boolean(room && room.actor === 'baby');
+  const ratio = baby ? EYE_RATIO.baby : EYE_RATIO.child;
+  return Math.round((eyeFor(room) / ratio) * 100) / 100;
 }
 

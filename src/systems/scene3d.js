@@ -19,9 +19,11 @@ import {
   contextOf,
   multiply,
   normal,
+  normalMatrix,
   orthographic,
   lookAt,
   add,
+  place,
   scale,
   program,
   shadowTarget,
@@ -44,11 +46,15 @@ import {
 } from './stage3d.js';
 import { spriteCanvas } from './sprites.js';
 import { figureCanvas, hasFigure } from './figures.js';
+import { bodyPlan, hasBody } from './bodies3d.js';
+import { bindMesh, drawMesh, releaseMeshes, uploadMeshes } from './meshes.js';
 import {
   TILE,
-  actorHeight,
+  actorBodyHeight,
   actorSprite,
-  cameraForPlayer,
+  cameraForEye,
+  clampPitch,
+  eyeFor,
   floorHit,
   posToWorld,
   projectPoint,
@@ -56,6 +62,7 @@ import {
   roomSize,
   setPlan,
   worldToGrid,
+  yawForDir,
 } from './world3d.js';
 
 const SHADOW_SIZE = 2048;
@@ -80,6 +87,15 @@ const FIGURE_UNIT = 4;
  * doing, and everyone else stands.
  */
 const FIGURE_POSE = { mama: 'lean' };
+
+/**
+ * The sprite poses, in radians of spine. `lean` is mama over the crib: the same
+ * body, bent forward, because that is the shape the beat is about.
+ */
+const FIGURE_LEAN = { lean: 0.34 };
+
+/** How close a body has to be before it turns to face you. */
+const BODY_NOTICE = 2.8;
 
 function figureSource(name, { view = 'front', pose = 'idle', frame = 0, unit = FIGURE_UNIT } = {}) {
   if (!hasFigure(name)) return null;
@@ -109,11 +125,12 @@ function viewForDir(dir) {
  * @param {Function} options.provider  returns { x, y, dir, frame } in tiles
  * @param {Function} [options.onTile]  called with { tx, ty } when the floor is clicked
  * @param {Function} [options.onProp]  called with a prop id when the prop itself is clicked
+ * @param {Function} [options.onLook]  called with (dYaw, dPitch) when the view is turned
  * @param {Map}      [options.nodes]   hotspot id -> DOM node, for labels
  * @param {string}   [options.search]  location.search, for ?render=
  * @param {object}   [options.doc]     document override, for the tests
  */
-export function createScene3D({ room, provider, onTile, onProp, nodes, search = '', doc } = {}) {
+export function createScene3D({ room, provider, onTile, onProp, onLook, nodes, search = '', doc } = {}) {
   const host = doc || (typeof document === 'undefined' ? null : document);
   if (!host || !room) return null;
 
@@ -187,6 +204,48 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
   const cubeLayout = [['aPos', 3, 0, 24], ['aNrm', 3, 12, 24]];
   const quadLayout = [['aPos', 2, 0, 8]];
 
+  /* ---------- the cast's solids ---------- */
+
+  // A body is five unit shapes plus a list of placements. Uploaded once, here; if
+  // a driver refuses the indexed buffers, bodyMeshes stays null and every slot
+  // keeps its painted card, so a weak machine gets the old picture rather than no
+  // picture at all.
+  let bodyMeshes = null;
+  try {
+    bodyMeshes = uploadMeshes(gl);
+    // the room's cube is already exactly a body's shoe: same layout, same 36
+    // vertices, so a box part borrows it instead of uploading a copy
+    bodyMeshes.box = { handle: cube, element: null, count: 36 };
+  } catch (error) {
+    bodyMeshes = null;
+  }
+
+  /**
+   * The body a sprite wears, or null for a sprite that was only ever a drawing.
+   * `height` is metres: the prop's own height, or for the player the height their
+   * eye implies, because the lens is inside that head.
+   */
+  function makeBody(sprite, height, opts = {}) {
+    if (!bodyMeshes || !hasBody(sprite)) return null;
+    const plan = bodyPlan(sprite, {
+      height,
+      pose: opts.pose === 'walk' ? 'walk' : 'idle',
+      phase: opts.phase || 0,
+      lean: opts.lean || 0,
+    });
+    if (!plan || !plan.parts.length) return null;
+    return {
+      plan,
+      height,
+      // a body's resting facing: the room's own, towards the south wall
+      home: 0,
+      yaw: 0,
+      // the player's head is full of camera, so parts this high are left out of
+      // the picture — never out of the shadow, which needs a whole silhouette
+      hideAbove: opts.hideAbove || 0,
+    };
+  }
+
   /* ---------- the shadow map ---------- */
 
   const lightDir = light.sunDir;
@@ -219,10 +278,14 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
    */
   const slots = [];
 
-  function addSlot({ id, sprite, origin, height, node = null, kind = 'prop', pose = 'idle' }) {
+  function addSlot({ id, sprite, origin, height, node = null, kind = 'prop', pose = 'idle', lean = 0, hideAbove = 0 }) {
     if (slots.length >= MAX_SPRITES) return null;
-    const source = spriteSource(sprite, pose);
-    if (!source) return null;
+    // A sprite with a body is drawn as volumes, so its card is never needed — the
+    // only reason to keep the texture is the frame after a driver refused the
+    // meshes, and in that case makeBody() has already returned null.
+    const body = makeBody(sprite, height, { lean, hideAbove });
+    const source = body ? null : spriteSource(sprite, pose);
+    if (!source && !body) return null;
     const slot = {
       id,
       sprite,
@@ -230,12 +293,15 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
       node,
       origin,
       height,
+      body,
       flip: false,
-      aspect: source.width / source.height,
-      texture: canvasTexture(gl, source),
+      aspect: source ? source.width / source.height : 1,
+      texture: source ? canvasTexture(gl, source) : null,
       glow: 0,
       tint: ZERO,
       hidden: false,
+      // a body the lens stands inside still casts a shadow, but is never drawn
+      shadowOnly: false,
     };
     slots.push(slot);
     return slot;
@@ -247,6 +313,7 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
       id: prop.id,
       sprite: prop.sprite,
       pose: FIGURE_POSE[prop.sprite] || 'idle',
+      lean: FIGURE_LEAN[FIGURE_POSE[prop.sprite]] || 0,
       origin: [prop.center[0], 0, prop.center[2]],
       height: prop.height,
       node: nodes && typeof nodes.get === 'function' ? nodes.get(prop.id) || null : null,
@@ -262,9 +329,18 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     id: 'player',
     sprite: actorSprite(room),
     origin: [0, 0, 0],
-    height: actorHeight(room),
+    // The eye is a gameplay constant, the body is derived from it: a 1.34 m view
+    // belongs to a child of about 1.48 m, and the head that high is where the
+    // camera goes.
+    height: actorBodyHeight(room),
+    // nothing above the eye can be seen anyway, and drawing it would put a skull
+    // around the lens
+    hideAbove: eyeFor(room) - 0.05,
     kind: 'player',
   });
+  // First person: the lens is in this body's own head, so its card only ever
+  // casts a shadow — you never see your own sprite in front of you.
+  if (playerSlot) playerSlot.shadowOnly = true;
 
   /**
    * The player is the one body in the room that moves, so it is the one body
@@ -295,6 +371,28 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
   }
 
   /**
+   * The player's body, rebuilt per frame from the stride phase — a leg has to be
+   * in a different place sixty times a second or the walk is a slide. The phase is
+   * quantised to a hundredth of a stride because a body that is asked the same
+   * question twice should not be rebuilt twice: standing still costs nothing.
+   */
+  let playerPlanCached = null;
+  let playerPlanKey = '';
+
+  function playerPlan(pose, phase) {
+    // a stride has no seam: 0.99 and 1.0 are the same instant, so both go to 0
+    const step = Math.round(phase * 100) % 100;
+    const key = `${pose}|${step}`;
+    if (playerPlanCached && key === playerPlanKey) return playerPlanCached;
+    const plan = bodyPlan(playerName, { height: actorBodyHeight(room), pose, phase: step / 100 });
+    if (plan) {
+      playerPlanCached = plan;
+      playerPlanKey = key;
+    }
+    return plan || playerPlanCached;
+  }
+
+  /**
    * Where each hotspot's DOM label sits. Furniture built as boxes has no
    * billboard of its own, so the anchor is kept apart from the sprite slots.
    */
@@ -310,9 +408,13 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
 
   const view = host.defaultView || null;
   const pointer = { x: 0.5, y: 0.5, active: false };
-  const sway = { x: 0, y: 0 };
   let cameraRight = [1, 0, 0];
-  let camera = cameraForPlayer([0, 0, 0], 1.6);
+  // The look direction lives in the game (explore.js owns yaw and pitch, because
+  // turning is gameplay); the scene only eases towards it, so a mouse jitter
+  // cannot shake the picture.
+  const lens = { yaw: 0, pitch: -0.04, seen: false };
+  const eyeHeight = eyeFor(room);
+  let camera = cameraForEye([0, 0, 0], { aspect: 1.6, eye: eyeHeight });
   let disposed = false;
   let frames = 0;
   let width = 1;
@@ -341,8 +443,18 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
   /* ---------- per-frame staging ---------- */
 
   let walked = [0, 0, 0];
-  let stride = 0;
+  let stepPhase = 0;
+  let bobY = 0;
   let lastSeconds = 0;
+  let propSeconds = 0;
+
+  /** The signed difference between two angles, in -pi..pi: the short way round. */
+  function shortestAngle(from, to) {
+    let delta = (to - from) % (Math.PI * 2);
+    if (delta > Math.PI) delta -= Math.PI * 2;
+    if (delta < -Math.PI) delta += Math.PI * 2;
+    return delta;
+  }
 
   function has(slot, name) {
     const node = slot.node;
@@ -355,7 +467,6 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
   }
 
   function stagePlayer(seconds) {
-    if (!playerSlot) return [0, 0, 0];
     const player = playerPosition();
     const world = posToWorld(room, player);
     const dx = world[0] - walked[0];
@@ -363,22 +474,64 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     const dt = Math.min(0.12, Math.max(0, seconds - lastSeconds));
     lastSeconds = seconds;
     walked = world;
-    const moving = Boolean(player.frame) || Math.hypot(dx, dz) > 0.002;
-    if (moving && !reduceMotion) {
-      stride = (stride + dt * 8) % 4;
-    } else {
-      stride = 0;
+    const travelled = Math.hypot(dx, dz);
+    const moving = Boolean(player.frame) || travelled > 0.002;
+
+    // The look. The game owns yaw and pitch; the scene only eases towards them,
+    // so a coarse input rate can never make the picture stutter.
+    const wantYaw = Number.isFinite(player.yaw) ? player.yaw : yawForDir(player.dir);
+    const wantPitch = clampPitch(Number.isFinite(player.pitch) ? player.pitch : -0.04);
+    if (!lens.seen) {
+      lens.yaw = wantYaw;
+      lens.pitch = wantPitch;
+      lens.seen = true;
     }
-    const bob = reduceMotion ? 0 : Math.sin(seconds * 7.5) * (moving ? 0.02 : 0.008);
-    playerSlot.origin = [world[0], 0.006 + bob, world[2]];
-    playerSlot.flip = player.dir === 'left';
-    dressPlayer(viewForDir(player.dir), moving ? 'walk' : 'idle', Math.floor(stride) % 4);
+    const ease = Math.min(1, dt * 22);
+    lens.yaw += shortestAngle(lens.yaw, wantYaw) * ease;
+    lens.pitch += (wantPitch - lens.pitch) * ease;
+
+    // The step. The eye rides on the feet, so it dips once per stride; the phase
+    // is advanced by distance walked, not by the clock, or the head would keep
+    // bobbing while you stand still.
+    if (moving && !reduceMotion) {
+      stepPhase = (stepPhase + travelled * 12 + dt * 5.5) % (Math.PI * 2);
+    } else {
+      stepPhase *= 0.9;
+    }
+    bobY = reduceMotion ? 0 : Math.sin(stepPhase) * (moving ? 0.05 : 0.008);
+
+    if (playerSlot) {
+      playerSlot.origin = [world[0], 0.006, world[2]];
+      playerSlot.flip = player.dir === 'left';
+      if (playerSlot.body) {
+        // The body walks when the feet walk, and it turns with the head: looking
+        // down should show your own chest facing the way you are looking.
+        playerSlot.body.plan = playerPlan(moving ? 'walk' : 'idle', stepPhase / (Math.PI * 2));
+        playerSlot.body.yaw = lens.yaw;
+      } else {
+        dressPlayer(viewForDir(player.dir), moving ? 'walk' : 'idle', 0);
+      }
+    }
     return world;
   }
 
   function stageProps(seconds) {
+    const dt = Math.min(0.12, Math.max(0, seconds - propSeconds));
+    propSeconds = seconds;
     for (const slot of slots) {
-      if (slot.kind === 'player' || !slot.node) continue;
+      if (slot.kind === 'player') continue;
+      if (slot.body) {
+        // A body knows where its audience is. Walk up behind someone and they turn
+        // to face you; step away and they drift back to the room's own front. The
+        // turn is eased over about half a second, which is what makes it read as
+        // noticing rather than as a turntable.
+        const dx = camera.eye[0] - slot.origin[0];
+        const dz = camera.eye[2] - slot.origin[2];
+        const close = !reduceMotion && Math.hypot(dx, dz) < BODY_NOTICE;
+        const target = close ? Math.atan2(dx, dz) : slot.body.home;
+        slot.body.yaw += shortestAngle(slot.body.yaw, target) * Math.min(1, dt * 2.4);
+      }
+      if (!slot.node) continue;
       // The room already speaks in CSS classes; read them here so the 3D room
       // answers exactly the state the 2D room would.
       const near = has(slot, 'is-near');
@@ -432,6 +585,52 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     gl.uniform1f(progRef.uniform('uFlip'), slot.flip ? -1 : 1);
   }
 
+  /**
+   * Every body in the room, part by part.
+   *
+   * The same list feeds the colour pass and the shadow pass — which is the whole
+   * point of building a body out of volumes: the shadow on the floor is a child's
+   * shadow, with a nose and elbows in it, and it changes when the child walks.
+   * Meshes are rebound only when they change, because a body's parts come in runs
+   * (both legs, the torso, both arms) and a rebind per part would be six times the
+   * work for the same picture.
+   */
+  function drawBodies(progRef, { shadow = false } = {}) {
+    if (!bodyMeshes) return;
+    let bound = null;
+    for (const slot of slots) {
+      const body = slot.body;
+      if (!body || !body.plan) continue;
+      if (!shadow && slot.hidden) continue;
+      const plan = body.plan;
+      const base = place([slot.origin[0], slot.origin[1] + (plan.lift || 0), slot.origin[2]], body.yaw);
+      for (const part of plan.parts) {
+        // the lens is inside the player's head: draw the body, not the skull
+        if (!shadow && body.hideAbove && part.at[1] > body.hideAbove) continue;
+        const mesh = bodyMeshes[part.mesh];
+        if (!mesh) continue;
+        const model = multiply(base, place(part.at, 0, part.rot, part.scale));
+        gl.uniformMatrix4fv(progRef.uniform('uModel'), false, model);
+        if (!shadow) {
+          // a limb is a unit capsule scaled [radius, length / 6, radius], so its
+          // normals have to come through the inverse transpose or the sun lands on
+          // it as if it were a ball
+          gl.uniformMatrix3fv(progRef.uniform('uNrmMat'), false, normalMatrix(model));
+          gl.uniform3fv(progRef.uniform('uAlbedo'), part.color);
+          gl.uniform1f(progRef.uniform('uRough'), part.rough);
+          // Clothing takes the woven pattern, skin and hair stay smooth: the rough
+          // value is the material, so the shader can be told by that alone
+          gl.uniform1f(progRef.uniform('uPattern'), part.rough >= 0.86 ? 3 : 0);
+        }
+        if (bound !== mesh) {
+          bindMesh(gl, progRef, mesh);
+          bound = mesh;
+        }
+        drawMesh(gl, mesh);
+      }
+    }
+  }
+
   function drawShadowPass() {
     if (!shadow.fbo) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, shadow.fbo);
@@ -450,16 +649,18 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
       gl.uniformMatrix4fv(depthSolid.uniform('uModel'), false, item.model);
       gl.drawArrays(gl.TRIANGLES, 0, 36);
     }
+    // the cast casts too, as volumes: a whole silhouette, head to heel
+    drawBodies(depthSolid, { shadow: true });
 
-    // props and the player cast too: alpha tested, so a figure leaves a
-    // silhouette rather than a rectangle
+    // a card that has no body is still a silhouette, alpha tested, so it leaves a
+    // shape rather than a rectangle — and is skipped entirely once a body exists
     depthSprite.use();
     gl.disable(gl.CULL_FACE);
     gl.uniformMatrix4fv(depthSprite.uniform('uLightVP'), false, lightVP);
     gl.uniform1i(depthSprite.uniform('uTex'), 0);
     bindAttribs(depthSprite, quad, quadLayout);
     for (const slot of slots) {
-      if (slot.hidden) continue;
+      if (slot.hidden || slot.body || !slot.texture) continue;
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, slot.texture);
       setSprite(depthSprite, slot);
@@ -490,12 +691,19 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
 
     for (const item of boxes) {
       gl.uniformMatrix4fv(surface.uniform('uModel'), false, item.model);
+      gl.uniformMatrix3fv(surface.uniform('uNrmMat'), false, normalMatrix(item.model));
       gl.uniform3fv(surface.uniform('uAlbedo'), item.color);
       gl.uniform1f(surface.uniform('uRough'), item.rough);
       gl.uniform1f(surface.uniform('uPattern'), item.pattern);
       gl.uniform1f(surface.uniform('uGlow'), item.glow || 0);
       gl.drawArrays(gl.TRIANGLES, 0, 36);
     }
+
+    // The cast is lit by the same program as the room, which is what keeps a face
+    // and a wall in the same light: same sun, same window fill, same shadow map.
+    gl.uniform1f(surface.uniform('uGlow'), 0);
+    gl.uniform3fv(surface.uniform('uTint'), ZERO);
+    drawBodies(surface);
   }
 
   function drawSprites(camera) {
@@ -523,7 +731,8 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     bindAttribs(billboard, quad, quadLayout);
 
     for (const slot of slots) {
-      if (slot.hidden) continue;
+      // a body was drawn in the surface pass; the player's card is never drawn
+      if (slot.hidden || slot.shadowOnly || slot.body || !slot.texture) continue;
       const facing = normal([camera.eye[0] - slot.origin[0], camera.eye[1] - slot.origin[1], camera.eye[2] - slot.origin[2]]);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, slot.texture);
@@ -558,13 +767,15 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     const playerWorld = stagePlayer(seconds);
     stageProps(seconds);
 
-    // pointer parallax, eased: the lens leans, the layout never moves
-    const wantX = pointer.active ? (pointer.x - 0.5) * 0.7 : 0;
-    const wantY = pointer.active ? (0.5 - pointer.y) * 0.3 : 0;
-    sway.x += (wantX - sway.x) * 0.1;
-    sway.y += (wantY - sway.y) * 0.1;
-
-    camera = cameraForPlayer(playerWorld, width / Math.max(1, height), sway);
+    // First person: no pointer parallax — the pointer *is* the view now, and the
+    // only thing that moves the eye besides the feet is a whole 4 cm step.
+    camera = cameraForEye(playerWorld, {
+      yaw: lens.yaw,
+      pitch: lens.pitch,
+      eye: eyeHeight,
+      aspect: width / Math.max(1, height),
+      bob: bobY,
+    });
     cameraRight = camera.right;
     const viewProj = multiply(camera.projection, camera.view);
     placeLabels();
@@ -590,6 +801,9 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     if (canvas.dataset) {
       if (frames % 30 === 0) canvas.dataset.frames = String(frames);
       canvas.dataset.walk = playerWorld.map((n) => n.toFixed(2)).join(',');
+      canvas.dataset.yaw = lens.yaw.toFixed(3);
+      canvas.dataset.pitch = lens.pitch.toFixed(3);
+      canvas.dataset.eye = eyeHeight.toFixed(2);
     }
   }
 
@@ -611,7 +825,21 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     render((now || 0) / 1000);
   }
 
-  /* ---------- input: click the floor to walk, click a prop to go there ---------- */
+  /* ---------- input: drag or pointer lock turns the head, a click walks ------- */
+
+  const LOOK = 0.0026; // radians per pixel of mouse travel
+  const DRAG_LOOK = 0.0034; // a drag has no pointer lock, so it needs a longer arm
+  let dragging = false;
+  let dragged = false;
+  let downX = 0;
+  let downY = 0;
+  let lastX = 0;
+  let lastY = 0;
+
+  function look(dx, dy, rate) {
+    if (!onLook) return;
+    onLook(-dx * rate, -dy * rate);
+  }
 
   function pointOf(event) {
     const box = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
@@ -622,23 +850,73 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     };
   }
 
+  /** Is the pointer already captured by this canvas? */
+  function locked() {
+    return typeof host.pointerLockElement !== 'undefined' && host.pointerLockElement === canvas;
+  }
+
+  function capture() {
+    if (!canvas.requestPointerLock || locked()) return;
+    try {
+      canvas.requestPointerLock();
+    } catch (error) {
+      /* a browser that refuses the lock is still playable by dragging */
+    }
+  }
+
+  function onPointerDown(event) {
+    dragging = true;
+    dragged = false;
+    downX = lastX = event.clientX || 0;
+    downY = lastY = event.clientY || 0;
+  }
+
   function onPointerMove(event) {
     const point = pointOf(event);
-    if (!point) return;
-    pointer.x = point.x;
-    pointer.y = point.y;
-    pointer.active = true;
+    if (point) {
+      pointer.x = point.x;
+      pointer.y = point.y;
+      pointer.active = true;
+    }
+    // Locked: every move is a look, and there is no cursor to pick with.
+    if (locked()) {
+      look(event.movementX || 0, event.movementY || 0, LOOK);
+      return;
+    }
+    if (!dragging) return;
+    const x = event.clientX || 0;
+    const y = event.clientY || 0;
+    if (!dragged && Math.hypot(x - downX, y - downY) > 3) dragged = true;
+    if (!dragged) return;
+    look(x - lastX, y - lastY, DRAG_LOOK);
+    lastX = x;
+    lastY = y;
   }
 
   function onPointerOut() {
     pointer.active = false;
   }
 
-  function onClick(event) {
+  function onPointerUp(event) {
+    const wasDrag = dragged;
+    dragging = false;
+    dragged = false;
+    if (wasDrag || locked()) return; // a drag looked, it did not pick
+    choose(event);
+  }
+
+  /**
+   * A click without a drag: a prop in the crosshair is walked up to, a spot on
+   * the floor is walked to, and the empty air behind both asks for the mouse.
+   */
+  function choose(event) {
     const point = pointOf(event);
     if (!point) return;
     const hit = floorHit(camera, point.x, point.y);
-    if (!hit) return;
+    if (!hit) {
+      capture();
+      return;
+    }
     const prop = propAt(plan.props, hit);
     if (prop) {
       if (onProp) onProp(prop.id);
@@ -649,10 +927,19 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     if (onTile) onTile(tile);
   }
 
+  /** Double click captures the mouse: free look without holding a button. */
+  function onDoubleClick(event) {
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    capture();
+  }
+
   if (typeof canvas.addEventListener === 'function') {
+    canvas.addEventListener('pointerdown', onPointerDown, { passive: true });
     canvas.addEventListener('pointermove', onPointerMove, { passive: true });
-    canvas.addEventListener('click', onClick);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerOut);
     canvas.addEventListener('pointerleave', onPointerOut);
+    canvas.addEventListener('dblclick', onDoubleClick);
     canvas.addEventListener('webglcontextlost', (event) => {
       if (event && typeof event.preventDefault === 'function') event.preventDefault();
       const parent = canvas.parentElement;
@@ -669,16 +956,25 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     disposed = true;
     cancelFrame(raf);
     if (typeof canvas.removeEventListener === 'function') {
+      canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
-      canvas.removeEventListener('click', onClick);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerOut);
       canvas.removeEventListener('pointerleave', onPointerOut);
+      canvas.removeEventListener('dblclick', onDoubleClick);
     }
+    if (typeof host.exitPointerLock === 'function' && locked()) host.exitPointerLock();
     if (view && typeof view.removeEventListener === 'function') view.removeEventListener('resize', resize);
     for (const slot of slots) if (slot.texture) gl.deleteTexture(slot.texture);
     for (const sheet of playerSheets.values()) {
       if (sheet.texture !== (playerSlot && playerSlot.texture)) gl.deleteTexture(sheet.texture);
     }
     playerSheets.clear();
+    if (bodyMeshes) {
+      // the box is the room's own cube, deleted below with the rest of the room
+      const { box, ...own } = bodyMeshes;
+      releaseMeshes(gl, own);
+    }
     gl.deleteBuffer(cube);
     gl.deleteBuffer(quad);
     gl.deleteBuffer(screenQuad);
@@ -698,9 +994,14 @@ export function createScene3D({ room, provider, onTile, onProp, nodes, search = 
     resize,
     dispose,
     plan,
+    firstPerson: true,
     hotspots: plan.props.filter((prop) => prop.hotspot).map((prop) => prop.id),
     get frames() {
       return frames;
+    },
+    /** Where the lens is pointing, for probes and for anything that needs to know. */
+    get look() {
+      return { yaw: lens.yaw, pitch: lens.pitch, eye: eyeHeight };
     },
     get pixels() {
       return { width, height };

@@ -16,8 +16,9 @@
     "sprites:verify": "node tools/sprites.mjs --verify",
     "atlas": "node tools/atlas-check.mjs",
     "figures": "node tools/figures-check.mjs",
+    "bodies": "node tools/bodies-check.mjs",
     "stage3d": "node tools/stage3d-check.mjs",
     "world3d": "node tools/world3d-check.mjs",
-    "test": "node tools/validate.mjs && node tools/sprites.mjs --verify && node tools/atlas-check.mjs && node tools/figures-check.mjs && node tools/stage3d-check.mjs && node tools/world3d-check.mjs && node tools/boot-check.mjs && node tools/room-check.mjs && node tools/smoke.mjs"
+    "test": "node tools/validate.mjs && node tools/sprites.mjs --verify && node tools/atlas-check.mjs && node tools/figures-check.mjs && node tools/bodies-check.mjs && node tools/stage3d-check.mjs && node tools/world3d-check.mjs && node tools/boot-check.mjs && node tools/room-check.mjs && node tools/smoke.mjs"
   }
 }

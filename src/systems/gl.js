@@ -44,6 +44,105 @@ export function compose(translate, rotateY = 0, scale = [1, 1, 1]) {
   return m;
 }
 
+/** translate (no rotation), for composing a body's own placement. */
+export function translation(v) {
+  const m = mat4();
+  m[12] = v[0];
+  m[13] = v[1];
+  m[14] = v[2];
+  return m;
+}
+
+/** scale, for unit solids that are stretched into shoes and skulls. */
+export function scaling(s) {
+  const m = mat4();
+  m[0] = s[0];
+  m[5] = s[1];
+  m[10] = s[2];
+  return m;
+}
+
+export function rotationX(a) {
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const m = mat4();
+  m[5] = c;
+  m[6] = s;
+  m[9] = -s;
+  m[10] = c;
+  return m;
+}
+
+export function rotationY(a) {
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const m = mat4();
+  m[0] = c;
+  m[2] = -s;
+  m[8] = s;
+  m[10] = c;
+  return m;
+}
+
+export function rotationZ(a) {
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const m = mat4();
+  m[0] = c;
+  m[1] = s;
+  m[4] = -s;
+  m[5] = c;
+  return m;
+}
+
+/**
+ * translate * rotateY * rotateXYZ * scale — one part of one body.
+ *
+ * `rot` is [rx, ry, rz] applied in that nesting (`yaw` is the body's own facing,
+ * `rot` the part's tilt inside it), which is the order bodies3d.js computes when
+ * it aims a limb from one joint at another.
+ */
+export function place(translate, yaw = 0, rot = [0, 0, 0], size = [1, 1, 1]) {
+  const spin = multiply(
+    multiply(rotationY(rot[1]), rotationX(rot[0])),
+    rotationZ(rot[2]),
+  );
+  return multiply(
+    multiply(translation(translate), rotationY(yaw)),
+    multiply(spin, scaling(size)),
+  );
+}
+
+/**
+ * The matrix normals want: the inverse transpose of the upper 3x3 of a model.
+ *
+ * A rotation alone would do — `mat3(uModel) * aNrm` is right for a rigid body — but
+ * nothing in this room is rigid: every limb is a unit capsule scaled [radius,
+ * length / 6, radius], and a normal stretched by that ends up pointing along the
+ * stretch instead of square to it, so a thin arm is lit as if it were a fat one and
+ * a squashed skull is lit as if it were round. Dividing by the stretch is exactly
+ * the inverse transpose, and the cofactor matrix over the determinant is the cheap
+ * way to write it: for a pure rotation the result is that same rotation, so a
+ * turned head still turns its highlights with it.
+ */
+export function normalMatrix(model) {
+  const a = [model[0], model[1], model[2]];
+  const b = [model[4], model[5], model[6]];
+  const c = [model[8], model[9], model[10]];
+  const u = cross(b, c);
+  const det = dot(a, u);
+  // a zero or vanishing scale has no normals to speak of: fall back to the identity
+  // rather than hand the shader a matrix of NaNs, which would blank the whole frame
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-9) return new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  const v = cross(c, a);
+  const w = cross(a, b);
+  return new Float32Array([
+    u[0] / det, u[1] / det, u[2] / det,
+    v[0] / det, v[1] / det, v[2] / det,
+    w[0] / det, w[1] / det, w[2] / det,
+  ]);
+}
+
 export function perspective(fovyRad, aspect, near, far) {
   const f = 1 / Math.tan(fovyRad / 2);
   const m = new Float32Array(16);
@@ -180,6 +279,14 @@ export function buffer(gl, data) {
   const handle = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, handle);
   gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  return handle;
+}
+
+/** An index buffer, for geometry that is worth sharing vertices between. */
+export function elementBuffer(gl, data) {
+  const handle = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, handle);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, gl.STATIC_DRAW);
   return handle;
 }
 

@@ -1,9 +1,10 @@
 // The 3D stage: a real room drawn with WebGL2, the chapter's cast standing in it
 // as depth-sorted billboards, one sun with a shadow map, ACES tonemapping.
 //
-// The cast never becomes geometry — the art pack stays 2D (see docs/3d.md). What
-// changes is the format of the stage: perspective camera, ground contact, light
-// and shadow, and a render target that goes up to 4K.
+// This is the close-up, so the cast here never becomes geometry — the art pack stays
+// 2D (see docs/3d.md). What changes is the format of the stage: perspective camera,
+// ground contact, light and shadow, and a render target that goes up to 4K. The
+// walkable world is the other half: it builds its cast from volumes in bodies3d.js.
 //
 // Everything that decides *where* things are is a pure function, so
 // tools/stage3d-check.mjs can test the staging without a GPU.
@@ -19,6 +20,7 @@ import {
   lookAt,
   multiply,
   normal,
+  normalMatrix,
   orthographic,
   perspective,
   program,
@@ -419,15 +421,21 @@ export const SURFACE_VS = `#version 300 es
 in vec3 aPos;
 in vec3 aNrm;
 uniform mat4 uModel;
+uniform mat3 uNrmMat;
 uniform mat4 uViewProj;
 uniform mat4 uLightVP;
 out vec3 vWorld;
 out vec3 vNrm;
+out vec3 vOwn;
 out vec4 vLight;
 void main() {
   vec4 world = uModel * vec4(aPos, 1.0);
   vWorld = world.xyz;
-  vNrm = mat3(uModel) * aNrm;
+  vNrm = uNrmMat * aNrm;
+  // the piece's own coordinates, in metres: one unit of a unit solid times the
+  // scale baked into that column of the model. Textures keyed to these stay put on
+  // the thing they belong to instead of sliding through it as it moves
+  vOwn = aPos * vec3(length(uModel[0].xyz), length(uModel[1].xyz), length(uModel[2].xyz));
   vLight = uLightVP * world;
   gl_Position = uViewProj * world;
 }`;
@@ -436,6 +444,7 @@ export const SURFACE_FS = `#version 300 es
 precision highp float;
 in vec3 vWorld;
 in vec3 vNrm;
+in vec3 vOwn;
 in vec4 vLight;
 uniform vec3 uAlbedo;
 uniform vec3 uSunDir;
@@ -481,8 +490,10 @@ void main() {
     albedo *= (0.72 + 0.42 * grain) * (0.7 + 0.3 * seam) * (0.86 + 0.28 * hash21(vec2(row, 1.3)));
     rough = clamp(0.46 + 0.4 * grain, 0.28, 1.0);
   } else if (uPattern < 3.5) {
-    // woven cloth
-    float weave = noise2(plane * 150.0) * 0.14 + noise2(plane * 26.0) * 0.2;
+    // woven cloth, measured on the cloth itself: keyed to the room, a weave would
+    // swim across a body every time the body took a step
+    vec2 own = abs(N.y) > 0.6 ? vOwn.xz : vec2(vOwn.x + vOwn.z, vOwn.y);
+    float weave = noise2(own * 150.0) * 0.14 + noise2(own * 26.0) * 0.2;
     albedo *= 0.84 + weave;
     rough = clamp(rough, 0.75, 1.0);
   } else {
@@ -881,6 +892,7 @@ export function createStage3D({ cast = [], bg = 'nursery', search = '', doc } = 
 
     for (const item of models) {
       gl.uniformMatrix4fv(surface.uniform('uModel'), false, item.model);
+      gl.uniformMatrix3fv(surface.uniform('uNrmMat'), false, normalMatrix(item.model));
       gl.uniform3fv(surface.uniform('uAlbedo'), item.color);
       gl.uniform1f(surface.uniform('uRough'), item.rough);
       gl.uniform1f(surface.uniform('uPattern'), item.pattern);

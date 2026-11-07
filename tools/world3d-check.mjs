@@ -9,19 +9,26 @@ import { ROOMS } from '../src/content/rooms.js';
 import { SPRITES } from '../src/systems/sprites.js';
 import { createScene3D } from '../src/systems/scene3d.js';
 import {
+  EYE_BABY,
+  EYE_CHILD,
   FENCE_H,
+  PITCH_LIMIT,
   PROP_GEOMETRY,
   SKIRT_H,
   SPRITE_HEIGHT,
   TILE,
   WALL_H,
   actorSprite,
-  cameraForPlayer,
+  cameraForEye,
+  clampPitch,
+  dirForYaw,
+  eyeFor,
   floorHit,
   gridToWorld,
   hasGeometry,
   hexToLinear,
   isIndoor,
+  lookAtPoint,
   posToWorld,
   projectPoint,
   propAt,
@@ -31,6 +38,7 @@ import {
   setPlan,
   tileAt,
   worldToGrid,
+  yawForDir,
 } from '../src/systems/world3d.js';
 import { dot } from '../src/systems/gl.js';
 
@@ -149,42 +157,65 @@ for (const room of rooms) {
 }
 
 
-/* ---------- the camera ---------- */
+/* ---------- the camera: first person ---------- */
 
 const room = ROOMS.ch1;
 const start = posToWorld(room, room.spawn);
-const camera = cameraForPlayer(start, 16 / 10);
+const camera = cameraForEye(start, { aspect: 16 / 10, yaw: 0, pitch: 0 });
 check(near(len(camera.forward), 1, 1e-6), 'forward is not a unit vector');
 check(near(dot(camera.forward, camera.right), 0, 1e-6), 'forward and right are not perpendicular');
-check(camera.right[0] > 0.9, 'right should point along +x');
-check(camera.eye[1] > 1.5, 'the camera is too low to see the room');
-check(camera.eye[2] > start[2], 'the camera should stand behind the player (+z)');
-check(camera.target[2] < start[2], 'the camera should look past the player (-z)');
+check(camera.right[0] < -0.9, 'looking along +z, the right hand should point at -x');
+check(near(camera.eye[1], EYE_CHILD, 1e-9), 'the eye is not at a child\'s eye height');
+check(near(camera.eye[0], start[0], 1e-9), 'the eye does not stand where the player stands (x)');
+check(near(camera.eye[2], start[2], 1e-9), 'the eye does not stand where the player stands (z)');
+check(near(camera.forward[2], 1, 1e-6), 'yaw 0 should look towards +z, the near wall');
 check(near(camera.projection[11], -1), 'the projection is not a perspective');
 
-const moved = cameraForPlayer([start[0] + 2, 0, start[2] - 1], 16 / 10);
-check(moved.eye[0] > camera.eye[0] + 1.5, 'the camera does not follow the player on x');
-check(moved.eye[2] < camera.eye[2] - 0.5, 'the camera does not follow the player on z');
+const turned = cameraForEye(start, { yaw: Math.PI });
+check(near(turned.forward[2], -1, 1e-6), 'yaw pi should look towards -z, the far wall');
+const east = cameraForEye(start, { yaw: Math.PI / 2 });
+check(near(east.forward[0], 1, 1e-6), 'yaw pi/2 should look towards +x');
+check(yawForDir('up') === Math.PI && yawForDir('down') === 0, 'a body facing up should look towards -z');
+for (const dir of ['up', 'down', 'left', 'right']) {
+  check(dirForYaw(yawForDir(dir)) === dir, `the view angle for ${dir} does not survive the round trip`);
+}
 
-const swayed = cameraForPlayer(start, 16 / 10, { x: 0.4, y: 0.2 });
-check(near(swayed.eye[0] - camera.eye[0], 0.4, 1e-9), 'pointer sway does not move the eye');
-check(swayed.eye[1] > camera.eye[1], 'pointer sway should lift the eye, not drop it');
+const moved = cameraForEye([start[0] + 2, 0, start[2] - 1], { yaw: 0 });
+check(near(moved.eye[0], start[0] + 2, 1e-9), 'the camera does not follow the player on x');
+check(near(moved.eye[2], start[2] - 1, 1e-9), 'the camera does not follow the player on z');
+
+const bobbed = cameraForEye(start, { bob: 0.05 });
+check(near(bobbed.eye[1] - camera.eye[1], 0.05, 1e-9), 'a step should lift the eye by its own height');
+check(near(bobbed.eye[0], camera.eye[0], 1e-9), 'a step should not slide the eye sideways');
+
+const look = lookAtPoint([0, EYE_CHILD, 0], [0, EYE_CHILD, -3]);
+check(near(Math.abs(look.yaw), Math.PI, 1e-9), 'looking down -z should be yaw pi');
+check(near(look.pitch, 0, 1e-9), 'level ground should not pitch the head');
+check(near(clampPitch(3), PITCH_LIMIT, 1e-9) && near(clampPitch(-3), -PITCH_LIMIT, 1e-9), 'pitch is not clamped');
+check(eyeFor(ROOMS.ch1) === EYE_BABY, 'a baby chapter should be played from the floor');
+check(eyeFor(ROOMS.ch2) === EYE_CHILD, 'a walking chapter should be played from eye height');
 
 /* ---------- picking ---------- */
 
-const centre = floorHit(camera, 0.5, 0.5);
-check(Boolean(centre), 'a click in the middle of the canvas should hit the floor');
+// The lens is level by default, so it looks at the horizon, not at the floor:
+// a click straight ahead hits air, and only a turned-down head hits the boards.
+const ahead = cameraForEye(start, { yaw: Math.PI, pitch: 0 });
+const down = cameraForEye(start, { yaw: Math.PI, pitch: -0.75 });
+check(floorHit(ahead, 0.5, 0.5) === null, 'a level lens should not hit the floor at the horizon');
+const centre = floorHit(down, 0.5, 0.5);
+check(Boolean(centre), 'a click on the floor should hit the floor');
 if (centre) {
   const tile = worldToGrid(room, centre[0], centre[2]);
   check(tile.tx >= 0 && tile.ty >= 0 && tile.tx < 18 && tile.ty < 12, 'the centre click lands outside the room');
 }
-check(floorHit(camera, 0.5, 0.02) === null, 'a click on the sky should not hit the floor');
-check(near(len(rayFromScreen(camera, 0.5, 0.5)), 1, 1e-6), 'a picking ray is not normalised');
+const skylook = cameraForEye(start, { yaw: Math.PI, pitch: 0.5 });
+check(floorHit(skylook, 0.5, 0.5) === null, 'a click on the sky should not hit the floor');
+check(near(len(rayFromScreen(ahead, 0.5, 0.5)), 1, 1e-6), 'a picking ray is not normalised');
 
-const projected = projectPoint(camera, [start[0], 0.9, start[2]]);
-check(projected.visible, 'the player does not project onto the canvas');
-check(projected.x > 0 && projected.x < 100 && projected.y > 0 && projected.y < 100, 'the player projects off-canvas');
-const behind = projectPoint(camera, [start[0], 0.9, start[2] + 40]);
+const projected = projectPoint(ahead, [start[0], 0.9, start[2] - 2]);
+check(projected.visible, 'a prop in front of the player does not project onto the canvas');
+check(projected.x > 0 && projected.x < 100 && projected.y > 0 && projected.y < 100, 'the prop projects off-canvas');
+const behind = projectPoint(ahead, [start[0], 0.9, start[2] + 40]);
 check(!behind.visible, 'a point behind the camera should not be visible');
 
 /* ---------- hotspots ---------- */

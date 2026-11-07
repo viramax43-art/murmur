@@ -12,12 +12,14 @@ import { roomFor, orderedObjects } from '../../content/rooms.js';
 import { buildGrid, moveEntity, findPath, pathToObject, objectsInReach, facingFor } from '../../systems/world.js';
 import { paintRoom, paintActors } from '../../systems/tiles.js';
 import { createScene3D } from '../../systems/scene3d.js';
+import { clampPitch, dirForYaw, eyeFor, gridToWorld, lookAtPoint, posToWorld, yawForDir } from '../../systems/world3d.js';
 import { countObjectsDone, isObjectDone } from '../../engine/state.js';
 import { sfx, unlockAudio } from '../../systems/audio.js';
 import { openNotebookSheet } from './notebook.js';
 import { showChapterEnd } from '../chapterflow.js';
 
 const SPEEDS = { child: 3.6, baby: 2.8 };
+const TURN_RATE = 2.3; // radians per second on the arrow keys
 const STEP_MS = 170;
 const ARRIVE = 0.07;
 
@@ -46,6 +48,10 @@ export function renderExplore({ go, params }) {
     y: room.spawn.y,
     dir: room.spawn.dir || 'down',
     frame: 0,
+    // First person: the view angle *is* the body's facing, so a chapter opens
+    // looking at whatever it wants you to do next.
+    yaw: yawForDir(room.spawn.dir || 'down'),
+    pitch: -0.05,
   };
 
   /* ---------- shell ---------- */
@@ -135,6 +141,23 @@ export function renderExplore({ go, params }) {
 
   const keys = el('p', { class: 'room__keys', text: t('walkHint') });
 
+  /** The first thing left to do — where the camera looks when a chapter opens. */
+  function nextTarget() {
+    return objects.find((entry) => !isObjectDone(chapter.id, entry.id)) || objects[0] || null;
+  }
+
+  /** Point the head at an object, in the same metres the renderer uses. */
+  function gazeAt(object) {
+    if (!object) return;
+    const from = posToWorld(room, player);
+    const to = gridToWorld(room, object.x + (object.w || 1) / 2 - 0.5, object.y + ((object.h || 1) - 1) / 2);
+    const gaze = lookAtPoint([from[0], eyeFor(room), from[2]], [to[0], 0.95, to[2]]);
+    player.yaw = gaze.yaw;
+    player.pitch = clampPitch(gaze.pitch * 0.55);
+  }
+
+  gazeAt(nextTarget());
+
   const scene3d = wants3D
     ? createScene3D({
         room,
@@ -144,10 +167,17 @@ export function renderExplore({ go, params }) {
           const object = objects.find((entry) => entry.id === id);
           if (object) approach(object);
         },
+        onLook: (dYaw, dPitch) => {
+          if (cancelled || leaving) return;
+          player.yaw += dYaw;
+          player.pitch = clampPitch(player.pitch + dPitch);
+        },
         nodes: spotNodes,
         search,
       })
     : null;
+
+  const cross = scene3d ? el('div', { class: 'room__cross', 'aria-hidden': 'true' }) : null;
 
   // No WebGL2, no shader, no canvas: the room is exactly what it was in 2D.
   if (!scene3d) {
@@ -169,7 +199,7 @@ export function renderExplore({ go, params }) {
       dataset: { theme: room.theme },
       style: { aspectRatio: `${roomW} / ${roomH}` },
     },
-    scene3d ? [scene3d.el, spots, hint] : [painted.canvas, actors, spots, hint]
+    scene3d ? [scene3d.el, spots, hint, cross] : [painted.canvas, actors, spots, hint]
   );
 
   const stage = el('div', { class: 'room-stage' }, [roomEl]);
@@ -264,11 +294,33 @@ export function renderExplore({ go, params }) {
   function step(dt) {
     let vx = 0;
     let vy = 0;
+    const firstPerson = Boolean(scene3d);
 
-    if (held.has('left')) vx -= 1;
-    if (held.has('right')) vx += 1;
-    if (held.has('up')) vy -= 1;
-    if (held.has('down')) vy += 1;
+    if (firstPerson) {
+      // First person: the arrows turn, WASD walks relative to the view, because
+      // that is the whole point of a lens in the head. The walk is still
+      // expressed in tiles and handed to the same moveEntity(), so the grid, the
+      // collision and the pathfinding do not change at all.
+      const turn = (held.has('turnLeft') ? -1 : 0) + (held.has('turnRight') ? 1 : 0);
+      if (turn) {
+        player.yaw += turn * TURN_RATE * dt;
+        player.dir = dirForYaw(player.yaw);
+      }
+      const fwd = (held.has('forward') ? 1 : 0) - (held.has('back') ? 1 : 0);
+      const side = (held.has('right') ? 1 : 0) - (held.has('left') ? 1 : 0);
+      if (fwd || side) {
+        const sin = Math.sin(player.yaw);
+        const cos = Math.cos(player.yaw);
+        // forward is (sin, cos) in tiles, and the right hand is (-cos, sin)
+        vx = sin * fwd - cos * side;
+        vy = cos * fwd + sin * side;
+      }
+    } else {
+      if (held.has('left')) vx -= 1;
+      if (held.has('right')) vx += 1;
+      if (held.has('up')) vy -= 1;
+      if (held.has('down')) vy += 1;
+    }
 
     if (vx || vy) {
       waypoints = [];
@@ -296,7 +348,7 @@ export function renderExplore({ go, params }) {
     if (vx || vy) {
       const len = Math.hypot(vx, vy) || 1;
       const next = moveEntity(grid, player, (vx / len) * speed * dt, (vy / len) * speed * dt);
-      player.dir = facingFor(vx, vy, player.dir);
+      player.dir = firstPerson ? dirForYaw(player.yaw) : facingFor(vx, vy, player.dir);
       if (next.x !== player.x || next.y !== player.y) {
         player.x = next.x;
         player.y = next.y;
@@ -321,18 +373,28 @@ export function renderExplore({ go, params }) {
 
   /* ---------- input ---------- */
 
-  const KEYMAP = {
+  // Two maps: the painted room keeps its four directions, the first-person room
+  // turns with the arrows and walks with WASD, which is what a player expects
+  // when the lens is in the character's head.
+  const KEYMAP_2D = {
     arrowleft: 'left', a: 'left',
     arrowright: 'right', d: 'right',
     arrowup: 'up', w: 'up',
     arrowdown: 'down', s: 'down',
   };
+  const KEYMAP_FPS = {
+    arrowup: 'forward', w: 'forward',
+    arrowdown: 'back', s: 'back',
+    a: 'left', d: 'right',
+    arrowleft: 'turnLeft', arrowright: 'turnRight',
+  };
+  const keymap = () => (scene3d ? KEYMAP_FPS : KEYMAP_2D);
 
   function onKeyDown(event) {
     const target = event.target;
     if (target && typeof target.closest === 'function' && target.closest('button, input, textarea')) return;
     const key = String(event.key || '').toLowerCase();
-    const dir = KEYMAP[key];
+    const dir = keymap()[key];
     if (dir) {
       held.add(dir);
       if (typeof event.preventDefault === 'function') event.preventDefault();
@@ -346,7 +408,7 @@ export function renderExplore({ go, params }) {
   }
 
   function onKeyUp(event) {
-    const dir = KEYMAP[String(event.key || '').toLowerCase()];
+    const dir = keymap()[String(event.key || '').toLowerCase()];
     if (dir) held.delete(dir);
   }
 

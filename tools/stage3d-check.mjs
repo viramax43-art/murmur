@@ -5,7 +5,15 @@
 // the same fake canvases boot-check and smoke use.
 
 import {
+  BILLBOARD_FS,
+  BILLBOARD_VS,
+  DEPTH_SPRITE_FS,
+  DEPTH_SPRITE_VS,
   PALETTES,
+  POST_FS,
+  POST_VS,
+  SURFACE_FS,
+  SURFACE_VS,
   cameraFor,
   castPlacement,
   createStage3D,
@@ -17,7 +25,7 @@ import {
   resolutionFor,
   roomPlan,
 } from '../src/systems/stage3d.js';
-import { dot } from '../src/systems/gl.js';
+import { dot, normal, normalMatrix, place, translation } from '../src/systems/gl.js';
 
 const problems = [];
 const check = (ok, message) => {
@@ -153,6 +161,121 @@ check(
   quad.filter((_, index) => index % 2 === 1).every((y) => y === 0 || y === 1),
   'a billboard quad should sit between y=0 and y=1',
 );
+
+/* ---------- normals: the inverse transpose, and the shaders that read it ---------- */
+
+/* a normal has to stay square to the surface it belongs to */
+
+const along = (m, v) => [
+  m[0] * v[0] + m[4] * v[1] + m[8] * v[2],
+  m[1] * v[0] + m[5] * v[1] + m[9] * v[2],
+  m[2] * v[0] + m[6] * v[1] + m[10] * v[2],
+];
+const through = (n, v) => [
+  n[0] * v[0] + n[3] * v[1] + n[6] * v[2],
+  n[1] * v[0] + n[4] * v[1] + n[7] * v[2],
+  n[2] * v[0] + n[5] * v[1] + n[8] * v[2],
+];
+
+// one face of the room's cube, turned and squashed the way a limb is: the normal
+// matrix must keep the normal square to the face even though the model does not.
+// The face is cut across the diagonal on purpose — a normal along a scaled axis is
+// square to its own face whichever matrix moves it, so it would prove nothing
+const squashed = place([1.2, 0.4, -0.8], 0.6, [0.4, 0, 0], [0.06, 0.42, 0.11]);
+const faceNormal = normal([1, 1, 0]);
+const faceTangents = [normal([1, -1, 0]), [0, 0, 1]];
+const unlit = normalMatrix(squashed);
+for (const tangent of faceTangents) {
+  const stretched = along(squashed, tangent);
+  check(
+    near(dot(through(unlit, faceNormal), stretched), 0, 1e-6),
+    `a normal is no longer square to its face: ${dot(through(unlit, faceNormal), stretched)}`,
+  );
+}
+// the model matrix alone leaves it at an angle, which is the bug this replaces —
+// and only the diagonal tangent can show it, because along a stretched axis the two
+// matrices agree
+const tiltedBy = dot(normal(along(squashed, faceNormal)), normal(along(squashed, faceTangents[0])));
+check(
+  Math.abs(tiltedBy) > 0.5,
+  `a squashed model matrix should tilt normals by about a radian, not ${tiltedBy}`,
+);
+
+check(
+  normalMatrix(translation([5, -2, 9])).every((v, i) => near(v, i % 4 === 0 ? 1 : 0, 1e-9)),
+  'moving a piece must not change its normals',
+);
+const turned = normalMatrix(place([3, 1, -2], 0.7));
+const yawed = place([0, 0, 0], 0.7);
+check(
+  [...turned].every((v, i) => near(v, yawed[Math.floor(i / 3) * 4 + (i % 3)], 1e-6)),
+  'a rotation must hand its normals the same rotation back',
+);
+check(
+  normalMatrix(place([0, 0, 0], 0, [0, 0, 0], [2, 2, 2])).every((v, i) => near(v, i % 4 === 0 ? 0.5 : 0, 1e-9)),
+  'a body scaled up twice should halve its normals, so that a unit sphere stays a unit sphere',
+);
+check(
+  normalMatrix(place([0, 0, 0], 0, [0, 0, 0], [0, 0, 0]))
+    .every((v, i) => Number.isFinite(v) && near(v, i % 4 === 0 ? 1 : 0, 1e-9)),
+  'a zero scale must fall back to the identity, not to a matrix of NaNs',
+);
+
+/* and the shaders have to be told about them */
+
+check(SURFACE_VS.includes('uniform mat3 uNrmMat'), 'the surface shader has no normal matrix to read');
+check(
+  /vNrm\s*=\s*uNrmMat\s*\*\s*aNrm/.test(SURFACE_VS),
+  'the surface shader does not put normals through the normal matrix',
+);
+check(
+  !/vNrm\s*=\s*mat3\(uModel\)/.test(SURFACE_VS),
+  'the surface shader still stretches normals with the model matrix',
+);
+
+// a weave keyed to the room slides across a body as it walks: the cloth branch has
+// to sample the piece's own coordinates, not the world's
+const clothAt = SURFACE_FS.indexOf('uPattern < 3.5');
+const cloth = SURFACE_FS.slice(clothAt, SURFACE_FS.indexOf('} else {', clothAt));
+check(clothAt > 0, 'the surface shader has lost its cloth pattern');
+check(
+  cloth.includes('vOwn') && !cloth.includes('plane'),
+  'the cloth weave is keyed to the room, so it will swim across a walking body',
+);
+
+/* every varying the vertex stage writes, the fragment stage must read */
+
+const declared = (source, kind) => {
+  const names = new Set();
+  for (const raw of source.split('\n')) {
+    const line = raw.trim();
+    if (!line.startsWith(`${kind} `)) continue;
+    const found = /^(?:in|out)\s+(?:highp\s+|mediump\s+|lowp\s+)?(?:vec[234]|float|int|mat[234])\s+(\w+)\s*;/.exec(line);
+    if (found) names.add(found[1]);
+  }
+  return names;
+};
+
+const pairs = [
+  ['surface', SURFACE_VS, SURFACE_FS],
+  ['billboard', BILLBOARD_VS, BILLBOARD_FS],
+  ['shadow sprite', DEPTH_SPRITE_VS, DEPTH_SPRITE_FS],
+  ['post', POST_VS, POST_FS],
+];
+for (const [name, vertex, fragment] of pairs) {
+  const written = declared(vertex, 'out');
+  const read = declared(fragment, 'in');
+  const missing = [...written].filter((varying) => !read.has(varying));
+  const orphaned = [...read].filter((varying) => !written.has(varying));
+  check(
+    missing.length === 0,
+    `${name}: the vertex stage writes ${missing.join(', ')} and the fragment stage never reads it`,
+  );
+  check(
+    orphaned.length === 0,
+    `${name}: the fragment stage reads ${orphaned.join(', ')} and the vertex stage never writes it`,
+  );
+}
 
 /* ---------- the null path: no browser, no WebGL2, no 3D ---------- */
 
